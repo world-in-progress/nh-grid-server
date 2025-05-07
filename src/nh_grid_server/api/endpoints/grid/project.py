@@ -23,9 +23,9 @@ def get_project_meta(name: str):
         raise HTTPException(status_code=404, detail='Grid project not found')
     
     # Read the project meta information from the file
-    info_path = project_path / 'meta.json'
+    project_meta_file = project_path / settings.GRID_PROJECT_META_FILE_NAME
     try:
-        with open(info_path, 'r') as f:
+        with open(project_meta_file, 'r') as f:
             data = json.load(f)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to read meta information of grid project: {str(e)}')

@@ -85,7 +85,7 @@ def set_current_project(project_meta: ProjectMeta):
         [
             sys.executable, settings.CRM_LAUNCHER_FILE,
             '--temp', settings.GRID_TEMP,
-            '--meta_path', 'meta.json', # Always use meta.json
+            '--meta_path', settings.GRID_SUBPROJECT_META_FILE_NAME,
             '--schema_path', schema_path,
             '--tcp_address', settings.TCP_ADDRESS,
             '--project_path', project_meta.get_path()

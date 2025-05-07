@@ -104,7 +104,7 @@ def delete_schema(name: str):
     dependency_found = False
     project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))
     for project_dir in project_dirs:
-        meta_file_path = Path(project_dir, 'meta.json')
+        meta_file_path = Path(project_dir, settings.GRID_PROJECT_META_FILE_NAME)
         if not meta_file_path.exists():
             continue
         
