@@ -13,21 +13,29 @@ from crms.grid import Grid
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Grid Launcher')
     parser.add_argument('--temp', type=str, default='False', help='Use temporary memory for grid')
-    parser.add_argument('--meta_path', type=str, required=True,  help='Path to the project meta info file')
-    parser.add_argument('--schema_path', type=str, required=True, help='Path to the schema file')
     parser.add_argument('--tcp_address', type=str, required=True, help='TCP address for the server')
-    parser.add_argument('--project_path', type=str, required=True, help='Path to the project directory')
+    parser.add_argument('--schema_file_path', type=str, required=True, help='Path to the schema file')
+    parser.add_argument('--grid_project_path', type=str, required=True, help='Path to the resource directory of grid project')
+    parser.add_argument('--meta_file_name', type=str, required=True,  help='Name of the meta information file of the grid project')
     args = parser.parse_args()
     
+    # Rename
+    temp = args.temp
+    ipc_address = 'ipc:///tmp/grid' # default address based on IPC, only can be used in Linux / MacOS
+    tcp_address = args.tcp_address
+    schema_file_path = args.schema_file_path
+    grid_project_path = args.grid_project_path
+    meta_file_name = args.meta_file_name
+    
     # Get info from schema file
-    schema = json.load(open(args.schema_path, 'r'))
+    schema = json.load(open(schema_file_path, 'r'))
     epsg: int = schema['epsg']
     grid_info: list[list[float]] = schema['grid_info']
     first_size: list[float] = grid_info[0]
     
     # Get info from project meta file
-    meta_path = Path(args.project_path, args.meta_path)
-    meta = json.load(open(meta_path, 'r'))
+    meta_file = Path(grid_project_path, meta_file_name)
+    meta = json.load(open(meta_file, 'r'))
     bounds: list[float] = meta['bounds']
     
     # Calculate subdivide rules
@@ -48,17 +56,12 @@ if __name__ == '__main__':
         )
     subdivide_rules.append([1, 1])
     
-    # Set crm server address
-    ipc_address = 'ipc:///tmp/grid' # default address based on IPC, only can be used in Linux / MacOS
-    tcp_address = args.tcp_address
-    
     # Init CRM
     crm = Grid(
         epsg, bounds, first_size, subdivide_rules, 
-        str(Path(args.project_path, 'grids.arrow'))
     )
     
-    # Run CRM server
+    # Launch CRM server
     server = cc.message.Server(tcp_address, crm)
     server.start()
     print('CRM server started at', tcp_address)

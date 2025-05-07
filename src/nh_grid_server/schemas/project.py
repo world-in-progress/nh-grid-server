@@ -1,6 +1,5 @@
 from pathlib import Path
 from pydantic import BaseModel, field_validator
-from .schema import ProjectSchema
 from ..core.config import settings
 
 class SubprojectMeta(BaseModel):
@@ -8,7 +7,7 @@ class SubprojectMeta(BaseModel):
     name: str
     starred: bool # whether the subproject is starred
     description: str # description of the subproject
-    bounds: tuple[float, float, float, float] # [min_lon, min_lat, max_lon, max_lat] 
+    bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ] 
     
     @field_validator('bounds')
     def validate_bounds(cls, v):
@@ -22,18 +21,6 @@ class ProjectMeta(BaseModel):
     starred: bool # whether the project is starred
     description: str # description of the project
     schema_name: str # name of project schema the project is based on
-    
-    def get_path(self) -> str:
-        """Get the path to the project directory"""
-        project_path = Path(settings.PROJECT_DIR) / f'{self.name}'
-        return str(project_path)
-    
-    def get_schema(self) -> ProjectSchema:
-        """Get the project schema associated with this project"""
-        schema_path = Path(settings.SCHEMA_DIR) / f'{self.schema_name}.json'
-        if not schema_path.exists():
-            raise FileNotFoundError(f'Schema file {schema_path} does not exist')
-        return ProjectSchema.parse_file(schema_path)
 
 class ResponseWithProjectMeta(BaseModel):
     """Response schema for project meta info"""

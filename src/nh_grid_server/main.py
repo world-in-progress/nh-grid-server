@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import api_router
 from .core.config import settings
 from .core.mcp_client import MCPClient
-from .core.server import shutdown_server_subprocess, init_working_directory
+from .core.server import close_current_project, init_working_directory
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    shutdown_server_subprocess()
+    close_current_project()
     await agent_client.cleanup()
 
 def create_app() -> FastAPI:

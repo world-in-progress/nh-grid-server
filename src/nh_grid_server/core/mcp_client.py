@@ -144,17 +144,17 @@ class MCPClient:
         ]
         
         if CURRENT_PROVIDER == MODEL_PROVIDER_ANTHROPIC:
-             await self._process_anthropic(messages, record, accumulated_text)
+             await self._process_anthropic(messages, record)
         elif CURRENT_PROVIDER == MODEL_PROVIDER_DEEPSEEK:
-            await self._process_openai(messages, record, accumulated_text)
+            await self._process_openai(messages, record)
         elif CURRENT_PROVIDER == MODEL_PROVIDER_OLLAMA:
-            await self._process_openai(messages, record, accumulated_text)
+            await self._process_openai(messages, record)
         else:
             raise ValueError(f'Unsupported model provider: {CURRENT_PROVIDER}')
         
         return accumulated_text or ''
             
-    async def _process_anthropic(self, messages, record_fn, accumulated_text):
+    async def _process_anthropic(self, messages, record_fn):
         """Process query using Anthropic model"""
         tool_call = True
         while tool_call:
@@ -197,9 +197,8 @@ class MCPClient:
                         })
                     
                 record_fn('\n')
-        return accumulated_text
     
-    async def _process_openai(self, messages, record_fn, accumulated_text):
+    async def _process_openai(self, messages, record_fn):
         """Process query using DeepSeek model"""
         tool_call = True
         
@@ -320,8 +319,6 @@ class MCPClient:
                 break
             
             record_fn('\n')
-        
-        return accumulated_text
     
     async def process_query_stream(self, query: str):
         """Process a query using the selected model with streaming output
