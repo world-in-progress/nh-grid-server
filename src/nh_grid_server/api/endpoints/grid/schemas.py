@@ -2,20 +2,20 @@ import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ...core.config import settings
-from ...schemas.base import NumberResponse
-from ...schemas.schema import GridSchema, ResponseWithGridSchemas
+from ....core.config import settings
+from ....schemas.base import NumberResponse
+from ....schemas.schema import ProjectSchema, ResponseWithProjectSchemas
 
-# APIs for multiple grid schemas ################################################
+# APIs for multiple project schemas ################################################
 
-router = APIRouter(prefix='/schemas', tags=['schemas'])
+router = APIRouter(prefix='/schemas', tags=['grid / schemas'])
 
-@router.get('/', response_model=ResponseWithGridSchemas)
+@router.get('/', response_model=ResponseWithProjectSchemas)
 def get_schemas(startIndex: int = 0, endIndex: int = None):
     """
     Description
     --
-    Get grid schemas within the specified range (startIndex inclusive, endIndex exclusive).  
+    Get project schemas within the specified range (startIndex inclusive, endIndex exclusive).  
     If endIndex is not provided, returns all schemas starting from startIndex.  
     
     Order
@@ -36,12 +36,12 @@ def get_schemas(startIndex: int = 0, endIndex: int = None):
         for file in schema_files:
             with open(file, 'r') as f:
                 data = json.load(f)
-                schemas.append(GridSchema(**data))
+                schemas.append(ProjectSchema(**data))
         
         # Sort schemas: first by starred (True first), then alphabetically by name within each group
         schemas.sort(key=lambda schema: (not schema.starred, schema.name.lower()))
-        return ResponseWithGridSchemas(
-            grid_schemas=schemas
+        return ResponseWithProjectSchemas(
+            project_schemas=schemas
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to retrieve schemas: {str(e)}')
@@ -51,7 +51,7 @@ def get_schema_num():
     """
     Description
     --
-    Get the number of grid schemas.
+    Get the number of project schemas.
     """
     
     schema_files = list(Path(settings.SCHEMA_DIR).glob('*.json'))

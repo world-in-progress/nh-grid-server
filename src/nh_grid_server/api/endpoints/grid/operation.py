@@ -3,13 +3,13 @@ import c_two as cc
 from fastapi import APIRouter, Response
 
 from icrms.igrid import IGrid
-from ...schemas import grid
-from ...compos import grid_comp
-from ...core.config import settings
+from ....schemas import grid
+from ....compos import grid_comp
+from ....core.config import settings
 
 # APIs for grid operations ################################################
 
-router = APIRouter(prefix='/grid', tags=['grid'])
+router = APIRouter(prefix='/operation', tags=['grid / operation'])
 
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Formart: [4 bytes for length, followed by level bytes, followed by global id bytes]')
 def activate_grid_infos():

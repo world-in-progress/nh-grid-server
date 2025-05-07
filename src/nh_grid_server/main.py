@@ -4,10 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api import api_router
 from .core.config import settings
-from .api.router import api_router
-from .core.server import shutdown_server_subprocess, init_working_directory
 from .core.mcp_client import MCPClient
+from .core.server import shutdown_server_subprocess, init_working_directory
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,6 +63,6 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host='0.0.0.0', port=8000)

@@ -2,44 +2,44 @@ import json
 from pathlib import Path
 from fastapi import APIRouter
 
-from ...schemas import base
-from ...schemas import project
-from ...core.config import settings
+from ....schemas import base
+from ....schemas import project
+from ....core.config import settings
 
-# APIs for multiple project meta ################################################
+# APIs for multiple grid projects ################################################
 
-router = APIRouter(prefix='/project-metas', tags=['project-metas'])
+router = APIRouter(prefix='/projects', tags=['grid / projects'])
 
 @router.get('/', response_model=project.ResponseWithProjectMetas)
 def get_project_metas(startIndex: int = 0, endIndex: int = None):
     """
     Description
     --
-    Get project metas within the specified range (startIndex inclusive, endIndex exclusive).  
+    Get meta information of multiple grid projects within the specified range (startIndex inclusive, endIndex exclusive).  
     If endIndex is not provided, returns all project metas starting from startIndex.  
     
     Order
     --
-    The order of project meta infos is based on the starred status and then alphabetically by name.
+    The order of project meta information is based on the starred status and then alphabetically by name.
     """
     
     project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))
-    project_files = [ project_dir / 'meta.json' for project_dir in project_dirs if project_dir.is_dir() ]
+    project_meta_files = [ project_dir / settings.GRID_PROJECT_META_FILE_NAME for project_dir in project_dirs if project_dir.is_dir() ]
 
     if startIndex < 0:
         startIndex = 0
     if endIndex is None:
-        endIndex = startIndex + 1 if startIndex + 1 < len(project_files) else startIndex + 1
+        endIndex = startIndex + 1 if startIndex + 1 < len(project_meta_files) else startIndex + 1
         
-    project_files = project_files[startIndex:endIndex]
+    project_meta_files = project_meta_files[startIndex:endIndex]
     
     project_metas = []
-    for file in project_files:
+    for file in project_meta_files:
         with open(file, 'r') as f:
             data = json.load(f)
             project_metas.append(project.ProjectMeta(**data))
     
-    # Sort project metas: first by starred (True first), then alphabetically by name within each group
+    # Sort project meta information: first by starred (True first), then alphabetically by name within each group
     project_metas.sort(key=lambda meta: (not meta.starred, meta.name.lower()))
     
     return project.ResponseWithProjectMetas(
@@ -51,7 +51,7 @@ def get_project_meta_num():
     """
     Description
     --
-    Retrieve the number of project meta files.
+    Retrieve the number of grid projects.
     """
     
     project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))

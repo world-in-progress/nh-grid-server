@@ -1,14 +1,13 @@
 from pathlib import Path
 from pydantic import BaseModel, field_validator
-from .schema import GridSchema
+from .schema import ProjectSchema
 from ..core.config import settings
 
-class ProjectMeta(BaseModel):
-    """Information about the project"""
+class SubprojectMeta(BaseModel):
+    """Information about the subproject of a specific project"""
     name: str
-    starred: bool # whether the project is starred
-    description: str # description of the project
-    schema_name: str # name of grid schema the project is based on
+    starred: bool # whether the subproject is starred
+    description: str # description of the subproject
     bounds: tuple[float, float, float, float] # [min_lon, min_lat, max_lon, max_lat] 
     
     @field_validator('bounds')
@@ -16,18 +15,25 @@ class ProjectMeta(BaseModel):
         if len(v) != 4:
             raise ValueError('bounds must have exactly 4 values [min_lon, min_lat, max_lon, max_lat]')
         return v
+
+class ProjectMeta(BaseModel):
+    """Information about the project"""
+    name: str
+    starred: bool # whether the project is starred
+    description: str # description of the project
+    schema_name: str # name of project schema the project is based on
     
     def get_path(self) -> str:
         """Get the path to the project directory"""
         project_path = Path(settings.PROJECT_DIR) / f'{self.name}'
         return str(project_path)
     
-    def get_schema(self) -> GridSchema:
-        """Get the grid schema associated with this project"""
+    def get_schema(self) -> ProjectSchema:
+        """Get the project schema associated with this project"""
         schema_path = Path(settings.SCHEMA_DIR) / f'{self.schema_name}.json'
         if not schema_path.exists():
             raise FileNotFoundError(f'Schema file {schema_path} does not exist')
-        return GridSchema.parse_file(schema_path)
+        return ProjectSchema.parse_file(schema_path)
 
 class ResponseWithProjectMeta(BaseModel):
     """Response schema for project meta info"""
@@ -40,6 +46,19 @@ class ResponseWithProjectMeta(BaseModel):
         # Ensure that the project_meta is an instance of ProjectMeta
         if not isinstance(v, ProjectMeta):
             raise ValueError('project_meta must be an instance of ProjectMeta')
+        return v
+    
+class ResponseWithSubprojectMetas(BaseModel):
+    """Response meta information for subprojects"""
+    subproject_metas: list[SubprojectMeta] | None
+
+    @field_validator('subproject_metas')
+    def validate_subproject_metas(cls, v):
+        if v is None:
+            return v
+        # Ensure that the subproject_metas are instances of SubprojectMeta
+        if not all(isinstance(info, SubprojectMeta) for info in v):
+            raise ValueError('subproject_metas must be a list of SubprojectMeta instances')
         return v
 
 class ResponseWithProjectMetas(BaseModel):

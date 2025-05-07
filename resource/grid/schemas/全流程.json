@@ -1,0 +1,16 @@
+{
+    "name": "全流程",
+    "epsg": 2326,
+    "starred": false,
+    "description": "",
+    "base_point": [
+        820438.748144,
+        830272.951395
+    ],
+    "grid_info": [
+        [
+            32.0,
+            32.0
+        ]
+    ]
+}

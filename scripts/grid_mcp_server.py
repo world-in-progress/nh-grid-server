@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/')))
 
 import c_two as cc
-import gridman.compos.grid_comp as compo
+import nh_grid_server.compos.grid_comp as compo
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP('Grid Agent Tools', instructions=cc.mcp.CC_INSTRUCTION)

@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
 class Settings(BaseSettings):
-    APP_NAME: str = 'Gridman'
+    APP_NAME: str = 'NH Grid Server'
     DEBUG: bool = True
     TCP_ADDRESS: str = 'tcp://localhost:5555'
     GRID_TEMP: str = 'False'
@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     SCHEMA_DIR: str = 'resource/grid/schemas/'
     PROJECT_DIR: str = 'resource/grid/projects/'
     CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
+    GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'
+    GRID_SUBPROJECT_META_FILE_NAME: str = 'grid.meta.json'
     TEMPLATES_DIR: str = str(ROOT_DIR / 'templates/')
     MCP_SERVER_SCRIPT_PATH: str = str(ROOT_DIR / 'scripts/grid_mcp_server.py')
     
