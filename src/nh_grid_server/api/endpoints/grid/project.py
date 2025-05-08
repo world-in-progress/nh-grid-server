@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
@@ -109,12 +110,7 @@ def delete_project(name: str):
     
     # Delete the folder of this project
     try:
-        for item in project_path.iterdir():
-            if item.is_dir():
-                item.rmdir()
-            else:
-                item.unlink()
-        project_path.rmdir()
+        shutil.rmtree(project_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete grid project: {str(e)}')
     

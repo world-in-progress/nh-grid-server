@@ -95,6 +95,33 @@ def create_subproject(project_name: str, data: SubprojectMeta):
         success=True,
         message='Grid subproject created successfully'
     )
+    
+@router.put('/{project_name}/{subproject_name}', response_model=BaseResponse)
+def update_subproject(project_name: str, subproject_name: str, data: SubprojectMeta):
+    """
+    Description
+    --
+    Update a specific subproject by new meta information.
+    """
+    
+    # Check if the subproject directory exists
+    project_dir = Path(settings.PROJECT_DIR, project_name)
+    subproject_dir = project_dir / subproject_name
+    if not subproject_dir.exists():
+        raise HTTPException(status_code=404, detail=f'Subproject ({subproject_name}) belonging to project ({project_name}) not found')
+    
+    # Write the updated subproject meta information to a file
+    subproject_meta_file = subproject_dir / settings.GRID_SUBPROJECT_META_FILE_NAME
+    try:
+        with open(subproject_meta_file, 'w') as f:
+            f.write(data.model_dump_json(indent=4))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to update grid subproject meta information: {str(e)}')
+    
+    return BaseResponse(
+        success=True,
+        message='Grid subproject updated successfully'
+    )
 
 @router.delete('/{project_name}/{subproject_name}', response_model=BaseResponse)
 def delete_project(project_name: str, subproject_name: str):

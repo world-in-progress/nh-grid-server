@@ -13,7 +13,7 @@ from ....schemas.project import SubprojectMeta, ResponseWithSubprojectMetas
 router = APIRouter(prefix='/subprojects', tags=['grid / subprojects'])
 
 @router.get('/{project_name}', response_model=ResponseWithSubprojectMetas)
-def get_multi_subproject_meta(project_name: str, subproject_name: str):
+def get_multi_subproject_meta(project_name: str):
     """
     Description
     --
