@@ -4,8 +4,6 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ....core.config import settings
-from ....schemas.base import BaseResponse
-from ....core.server import set_current_project
 from ....schemas.project import SubprojectMeta, ResponseWithSubprojectMetas
 
 # APIs for multi grid subproject ################################################

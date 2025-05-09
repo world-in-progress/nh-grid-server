@@ -11,10 +11,7 @@ from mcp import ClientSession, StdioServerParameters
 from anthropic import Anthropic, NOT_GIVEN, NotGiven
 from openai import AsyncOpenAI, OpenAI, NOT_GIVEN as OpenAI_NOT_GIVEN
 
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from .config import settings
-
 
 OLLAMA_3_2 = 'llama3.2:latest'
 DEEPSEEK_CHAT = 'deepseek-chat'
