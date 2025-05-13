@@ -4,6 +4,11 @@ from pydantic_settings import BaseSettings
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
+APP_CONTEXT: dict[str, str] = {
+    'current_project': None,
+    'current_subproject': None
+}
+
 class Settings(BaseSettings):
     APP_NAME: str = 'NH Grid Server'
     DEBUG: bool = True
