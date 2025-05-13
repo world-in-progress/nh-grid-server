@@ -12,18 +12,18 @@ from ....core.config import settings
 
 router = APIRouter(prefix='/operation', tags=['grid / operation'])
 
-@router.get('/{project_name}/{subproject_name}', response_model=grid.GridMeta)
-def get_grid_meta(project_name: str, subproject_name: str):
+@router.get('/meta', response_model=grid.GridMeta)
+def get_grid_meta():
     """
     Get grid meta information for a specific subproject.
     """
     try:
-        project_dir = Path(settings.PROJECT_DIR, project_name)
-        subproject_dir = project_dir / subproject_name
-        if not subproject_dir.exists() or not project_dir.exists():
-            raise HTTPException(status_code=404, detail=f'Grid subproject ({subproject_name}) belonging to project ({project_name}) not found')
+        # project_dir = Path(settings.PROJECT_DIR, project_name)
+        # subproject_dir = project_dir / subproject_name
+        # if not subproject_dir.exists() or not project_dir.exists():
+        #     raise HTTPException(status_code=404, detail=f'Grid subproject ({subproject_name}) belonging to project ({project_name}) not found')
         
-        return grid.GridMeta.from_subproject(project_name, subproject_name)
+        return grid.GridMeta.from_context()
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 

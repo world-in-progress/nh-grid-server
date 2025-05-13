@@ -3,11 +3,9 @@ import sys
 import signal
 import subprocess
 from pathlib import Path
-from .config import settings
+from .config import settings, APP_CONTEXT
 from ..schemas.project import ProjectMeta
 
-current_project: str | None = None
-current_subproject: str | None = None
 server_process: subprocess.Popen | None = None
 
 def init_working_directory():
@@ -22,14 +20,13 @@ def init_working_directory():
 
 def set_current_project(project_meta: ProjectMeta, subproject_name: str) -> bool:
     
-    global current_project, current_subproject
     # Check if current project is the same as the new one
     # If not, shut down current crm server
-    if current_project == project_meta.name and current_subproject == subproject_name:
+    if APP_CONTEXT['current_project'] == project_meta.name and APP_CONTEXT['current_subproject'] == subproject_name:
         return
     else:
-        current_project = project_meta.name
-        current_subproject = subproject_name
+        APP_CONTEXT['current_project'] = project_meta.name
+        APP_CONTEXT['current_subproject'] = subproject_name
         close_current_project()
 
     # Check if schema is valid

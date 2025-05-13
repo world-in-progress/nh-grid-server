@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 from .base import BaseResponse
-from ..core.config import settings
+from ..core.config import settings, APP_CONTEXT
 from .schema import ProjectSchema
 from .project import ProjectMeta, SubprojectMeta
 
@@ -16,9 +16,12 @@ class GridMeta(BaseModel):
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
     
     @staticmethod
-    def from_subproject(project_name: str, subproject_name: str):
+    def from_context():
         """Create a GridMeta instance from a subproject"""
 
+        project_name = APP_CONTEXT['current_project']
+        subproject_name = APP_CONTEXT['current_subproject']
+        
         project_dir = Path(settings.PROJECT_DIR, project_name)
         subproject_dir = project_dir / subproject_name
         project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
@@ -37,7 +40,7 @@ class GridMeta(BaseModel):
             project_meta = ProjectMeta(**project_data)
             
             schema_name = project_meta.schema_name
-            schema_file = Path(settings.SCHEMA_DIR, schema_name)
+            schema_file = Path(settings.SCHEMA_DIR, f'{schema_name}.json')
             
             with open(schema_file, 'r') as f:
                 schema_data = json.load(f)
