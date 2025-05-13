@@ -1,6 +1,78 @@
+import json
+import math
 import numpy as np
+from pathlib import Path
 from pydantic import BaseModel, field_validator
 from .base import BaseResponse
+from ..core.config import settings
+from .schema import ProjectSchema
+from .project import ProjectMeta, SubprojectMeta
+
+class GridMeta(BaseModel):
+    """Meta information for a specific grid resource"""
+    name: str # name of the grid
+    epsg: int # EPSG code for the grid
+    subdivide_rules: list[tuple[int, int]] # rules for subdividing the grid
+    bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
+    
+    @staticmethod
+    def from_subproject(project_name: str, subproject_name: str):
+        """Create a GridMeta instance from a subproject"""
+
+        project_dir = Path(settings.PROJECT_DIR, project_name)
+        subproject_dir = project_dir / subproject_name
+        project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
+        subproject_meta_file = subproject_dir / settings.GRID_SUBPROJECT_META_FILE_NAME
+        
+        try:
+            # Get bounds from subproject meta file
+            with open(subproject_meta_file, 'r') as f:
+                subproject_data = json.load(f)
+            subproject_meta = SubprojectMeta(**subproject_data)
+            bounds = subproject_meta.bounds
+            
+            # Get grid info from project meta file
+            with open(project_meta_file, 'r') as f:
+                project_data = json.load(f)
+            project_meta = ProjectMeta(**project_data)
+            
+            schema_name = project_meta.schema_name
+            schema_file = Path(settings.SCHEMA_DIR, schema_name)
+            
+            with open(schema_file, 'r') as f:
+                schema_data = json.load(f)
+            schema_meta = ProjectSchema(**schema_data)
+            epsg = schema_meta.epsg
+            grid_info = schema_meta.grid_info
+            first_size = grid_info[0]
+    
+            # Calculate subdivide rules
+            subdivide_rules: list[list[int]] = [
+                [
+                    int(math.ceil((bounds[2] - bounds[0]) / first_size[0])),
+                    int(math.ceil((bounds[3] - bounds[1]) / first_size[1])),
+                ]
+            ]
+            for i in range(len(grid_info) - 1):
+                level_a = grid_info[i]
+                level_b = grid_info[i + 1]
+                subdivide_rules.append(
+                    [
+                        int(level_a[0] / level_b[0]),
+                        int(level_a[1] / level_b[1]),
+                    ]
+                )
+            subdivide_rules.append([1, 1])
+            
+            return GridMeta(
+                name=subproject_name,
+                epsg=epsg,
+                subdivide_rules=subdivide_rules,
+                bounds=bounds
+            )
+            
+        except Exception as e:
+            raise ValueError(f'Failed to create grid meta information: {str(e)}')
 
 class MultiGridInfo(BaseModel):
     levels: list[int]
