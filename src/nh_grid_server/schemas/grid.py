@@ -4,8 +4,8 @@ import numpy as np
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 from .base import BaseResponse
-from ..core.config import settings, APP_CONTEXT
 from .schema import ProjectSchema
+from ..core.config import settings, APP_CONTEXT
 from .project import ProjectMeta, SubprojectMeta
 
 class GridMeta(BaseModel):
