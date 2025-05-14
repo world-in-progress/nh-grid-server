@@ -224,6 +224,9 @@ class IGrid:
     
     def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
         ...
+        
+    def delete_grids(self, levels: list[int], global_ids: list[int]):
+        ...
     
     def get_parent_keys(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
         ...

@@ -16,11 +16,8 @@ class GridMeta(BaseModel):
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
     
     @staticmethod
-    def from_context():
+    def from_subproject(project_name: str, subproject_name: str):
         """Create a GridMeta instance from a subproject"""
-
-        project_name = APP_CONTEXT['current_project']
-        subproject_name = APP_CONTEXT['current_subproject']
         
         project_dir = Path(settings.PROJECT_DIR, project_name)
         subproject_dir = project_dir / subproject_name
@@ -76,6 +73,14 @@ class GridMeta(BaseModel):
             
         except Exception as e:
             raise ValueError(f'Failed to create grid meta information: {str(e)}')
+    
+    @staticmethod
+    def from_context():
+        """Create a GridMeta instance from a subproject"""
+
+        project_name = APP_CONTEXT['current_project']
+        subproject_name = APP_CONTEXT['current_subproject']
+        return GridMeta.from_subproject(project_name, subproject_name)
 
 class MultiGridInfo(BaseModel):
     levels: list[int]
@@ -111,6 +116,22 @@ class MultiGridInfo(BaseModel):
             'levels_bytes': level_str,
             'global_ids_bytes': global_id_str,
         }
+    
+    def combine_bytes(self):
+        """
+        Combine the grid information into a single bytes object
+        
+        Format: [4 bytes for length, followed by level bytes, followed by global id bytes]
+        """
+        
+        level_bytes = np.array(self.levels, dtype=np.int8).tobytes()
+        global_id_bytes = np.array(self.global_ids, dtype=np.int32).tobytes()
+        
+        level_length = len(level_bytes).to_bytes(4, byteorder='little')
+        padding_size = (4 - (len(level_length) + len(level_bytes)) % 4) % 4
+        padding = b'\x00' * padding_size
+        
+        return level_length + level_bytes + padding + global_id_bytes
 
 class MultiGridInfoResponse(BaseResponse):
     """Standard response schema for grid operations"""
