@@ -210,6 +210,51 @@ class GridKeys:
         keys = table.column('keys').to_pylist()
         return keys
 
+@cc.transferable
+class GridCenter:
+    def serialize(lon: float, lat: float) -> bytes:
+        schema = pa.schema([
+            pa.field('lon', pa.float64()),
+            pa.field('lat', pa.float64()),
+        ])
+        
+        data = {
+            'lon': lon,
+            'lat': lat,
+        }
+        
+        table = pa.Table.from_pylist([data], schema=schema)
+        return cc.message.serialize_from_table(table)
+
+    def deserialize(arrow_bytes: bytes) -> tuple[float, float]:
+        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        return (
+            row['lon'],
+            row['lat']
+        )
+
+@cc.transferable
+class MultiGridCenters:
+    def serialize(centers: list[tuple[float, float]]) -> bytes:
+        schema = pa.schema([
+            pa.field('lon', pa.float64()),
+            pa.field('lat', pa.float64()),
+        ])
+        
+        data = {
+            'lon': [center[0] for center in centers],
+            'lat': [center[1] for center in centers],
+        }
+        
+        table = pa.Table.from_pydict(data, schema=schema)
+        return cc.message.serialize_from_table(table)
+
+    def deserialize(arrow_bytes: bytes) -> list[tuple[float, float]]:
+        table = cc.message.deserialize_to_table(arrow_bytes)
+        lon = table.column('lon').to_pylist()
+        lat = table.column('lat').to_pylist()
+        return list(zip(lon, lat))
+
 # Define ICRM ###########################################################
 
 @cc.icrm
@@ -237,3 +282,8 @@ class IGrid:
     def get_active_grid_infos(self) -> tuple[list[int], list[int]]:
         ...
     
+    def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
+        ...
+    
+    def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:
+        ...

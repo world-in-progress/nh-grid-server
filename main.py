@@ -1,6 +1,5 @@
 import logging
 import uvicorn
-from src.nh_grid_server.main import app
 
 logging.basicConfig(
     level=logging.DEBUG,

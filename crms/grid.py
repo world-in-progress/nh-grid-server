@@ -488,3 +488,60 @@ class Grid(IGrid):
         """
         active_grids = self.grids[self.grids[ATTR_ACTIVATE] == True]
         return active_grids.index.get_level_values(0).tolist(), active_grids.index.get_level_values(1).tolist()
+    
+    def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
+        """Method to get center coordinates of a grid
+
+        Args:
+            level (int): level of the grid
+            global_id (int): global id of the grid
+
+        Returns:
+            tuple[float, float]: center coordinates of the grid
+        """
+        min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, np.array([global_id]))
+        return (min_xs[0] + max_xs[0]) / 2, (min_ys[0] + max_ys[0]) / 2
+
+    def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:
+        """Method to get center coordinates of multiple grids
+
+        Args:
+            levels (list[int]): levels of the grids
+            global_ids (list[int]): global ids of the grids
+
+        Returns:
+            list[tuple[float, float]]: list of center coordinates of the grids
+        """
+
+        # Group global_ids and their original indices by level
+        # This dictionary will map each level to a list of global_ids and their original indices
+        level_data_map = {}
+        for i, (level, global_id) in enumerate(zip(levels, global_ids)):
+            if level not in level_data_map:
+                level_data_map[level] = {'ids': [], 'indices': []}
+            level_data_map[level]['ids'].append(global_id)
+            level_data_map[level]['indices'].append(i)
+
+        # Pre-allocate a list to store results in the original order
+        results = [None] * len(levels)
+
+        # Process each group (level)
+        for level, data in level_data_map.items():
+            # Convert the list of global_ids for the current level to a NumPy array
+            # ATTR_GLOBAL_ID is int32, so specifying dtype for consistency and potential optimization.
+            g_ids_np = np.array(data['ids'], dtype=np.int32)
+
+            # Call _get_coordinates once for all global_ids in the current level group
+            min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, g_ids_np)
+
+            # Calculate center coordinates for all grids in this batch (vectorized operation)
+            center_xs = (min_xs + max_xs) / 2.0
+            center_ys = (min_ys + max_ys) / 2.0
+
+            # Distribute the calculated centers back to the results list
+            # according to their original indices
+            for i in range(len(data['ids'])): # Iterate through items in the current group
+                original_index = data['indices'][i]
+                results[original_index] = (center_xs[i], center_ys[i])
+
+        return results
