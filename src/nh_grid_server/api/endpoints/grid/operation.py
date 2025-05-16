@@ -44,18 +44,10 @@ def activate_grid_infos():
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.get_active_grid_infos()
         
-        level_bytes = np.array(levels, dtype=np.int8).tobytes()
-        global_id_bytes = np.array(global_ids, dtype=np.int32).tobytes()
-        
-        level_length = len(level_bytes).to_bytes(4, byteorder='little')
-        padding_size = (4 - (len(level_length) + len(level_bytes)) % 4) % 4
-        padding = b'\x00' * padding_size
-        
-        combined_data = level_length + level_bytes + padding + global_id_bytes
-        logging.debug(f'Activate grid info: {len(levels)}, {len(global_ids)}, {len(combined_data)}')
+        grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
         
         return Response(
-            content=combined_data,
+            content=grid_infos.combine_bytes(),
             media_type='application/octet-stream'
         )
 
@@ -89,20 +81,25 @@ def delete_grids(grid_info: grid.MultiGridInfo):
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete grids: {str(e)}')
-
+    
 # Helpers ##################################################
 
-def _keys_to_levels_global_ids(keys: list[str]) -> tuple[list[int], list[int]]:
+def _keys_to_levels_global_ids(keys: list[str | None]) -> tuple[list[int], list[int]]:
     """
-    Convert grid keys to levels and global IDs
+    Convert grid keys to levels and global IDs.
     Args:
-        keys (list[str]): List of grid keys in the format "level-global_id"
+        keys (list[str | None]): List of grid keys in the format "level-global_id"
     Returns:
         tuple[list[int], list[int]]: Tuple of two lists - levels and global IDs
     """
+    if not keys:
+        return [], []
+
     levels: list[int] = []
     global_ids: list[int] = []
     for key in keys:
+        if key is None:
+            continue
         level, global_id = map(int, key.split('-'))
         levels.append(level)
         global_ids.append(global_id)

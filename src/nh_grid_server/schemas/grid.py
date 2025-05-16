@@ -98,25 +98,6 @@ class MultiGridInfo(BaseModel):
             raise ValueError('Global IDs cannot be empty')
         return v
     
-    def to_bytes_dict(self):
-        """Convert the grid information to a binary-efficient dictionary."""
-        
-        level_arr = np.array(self.levels, dtype=np.int8)
-        global_id_arr = np.array(self.global_ids, dtype=np.int32)
-        
-        grid_num = len(self.levels)
-        level_bytes = level_arr.tobytes()
-        global_id_bytes = global_id_arr.tobytes()
-        
-        level_str = ''.join(chr(x) for x in level_bytes)
-        global_id_str = ''.join(chr(x) for x in global_id_bytes)
-        
-        return {
-            'grid_num': grid_num,
-            'levels_bytes': level_str,
-            'global_ids_bytes': global_id_str,
-        }
-    
     def combine_bytes(self):
         """
         Combine the grid information into a single bytes object
