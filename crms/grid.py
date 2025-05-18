@@ -535,12 +535,7 @@ class Grid(IGrid):
             
             min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, current_global_ids)
             result_array[original_indices] = np.column_stack((min_xs, min_ys, max_xs, max_ys))
-
-            # for i, idx in enumerate(original_indices):
-            #     result_array[idx, 0] = min_xs[i]
-            #     result_array[idx, 1] = min_ys[i]
-            #     result_array[idx, 2] = max_xs[i]
-            #     result_array[idx, 3] = max_ys[i]
+            
         return result_array.flatten().tolist()
 
     def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:

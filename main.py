@@ -9,7 +9,8 @@ logging.basicConfig(
 if __name__ == "__main__":
     import os
     import sys
-    venv_path = sys.prefix
-    os.environ['PROJ_LIB'] = os.path.join(venv_path, 'Lib', 'site-packages', 'osgeo', 'data', 'proj')
+    if sys.platform.startswith('win') or sys.platform.startswith('linux'):
+        venv_path = sys.prefix
+        os.environ['PROJ_LIB'] = os.path.join(venv_path, 'Lib', 'site-packages', 'osgeo', 'data', 'proj')
     
     uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True)
