@@ -8,10 +8,26 @@ dependencies = [
     "anthropic>=0.50.0",
     "c-two>=0.1.18",
     "fastapi>=0.115.12",
-    "gdal>=3.10.3",
+    "gdal>=3.10.2",
     "jinja2>=3.1.6",
     "numpy>=2.2.5",
     "openai>=1.77.0",
     "pandas>=2.2.3",
     "uvicorn>=0.34.2",
 ]
+
+[tool.uv.sources]
+gdal = [
+  { index = "gdal-wheels", marker = "sys_platform == 'linux'" },
+  { index = "geospatial_wheels", marker = "sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "geospatial_wheels"
+url = "https://nathanjmcdougall.github.io/geospatial-wheels-index/"
+explicit = true
+
+[[tool.uv.index]]
+name = "gdal-wheels"
+url = "https://gitlab.com/api/v4/projects/61637378/packages/pypi/simple"
+explicit = true
