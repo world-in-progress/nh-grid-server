@@ -174,7 +174,7 @@ def pick_grids_by_feature(feature_dir: str):
                     content=grid.MultiGridInfo(levels=[], global_ids=[]).combine_bytes(),
                     media_type='application/octet-stream'
                 )
-            centers: list[tuple[float, float]] = grid_interface.get_multi_grid_centers(active_levels, active_global_ids)
+            bboxes: list[float]  = grid_interface.get_multi_grid_bboxes(active_levels, active_global_ids)
 
         # Step 3: Pick grids, centers of which are within the features, accelerate with multiprocessing
         picked_grids_levels: list[int] = []
@@ -182,16 +182,16 @@ def pick_grids_by_feature(feature_dir: str):
         
         # Batch processing
         n_cores = mp.cpu_count()
-        total_grids = len(centers)
+        total_grids = len(bboxes) // 4
         points_per_process = max(1000, total_grids // (n_cores * 2))
         batches = []
         for i in range(0, total_grids, points_per_process):
             end_idx = min(i + points_per_process, total_grids)
             batch_indices = list(range(i, end_idx))
-            batch_centers = centers[i:end_idx]
+            batch_bboxes = bboxes[i * 4:end_idx * 4]
             batch_levels = [active_levels[idx] for idx in batch_indices]
             batch_global_ids = [active_global_ids[idx] for idx in batch_indices]
-            batches.append((batch_indices, batch_centers, batch_levels, batch_global_ids))
+            batches.append((batch_indices, batch_bboxes, batch_levels, batch_global_ids))
         
         geometry_wkts = [geom.ExportToWkt() for geom in ogr_geometries]    
         process_func = partial(_process_grid_batch, geometry_wkts=geometry_wkts)
@@ -257,22 +257,35 @@ def _keys_to_levels_global_ids(keys: list[str | None]) -> tuple[list[int], list[
 
 def _process_grid_batch(batch_data, geometry_wkts):
     # _ is batch_indices
-    _, batch_centers, batch_levels, batch_global_ids = batch_data
+    _, batch_boxes, batch_levels, batch_global_ids = batch_data
     
     geometries = [ogr.CreateGeometryFromWkt(wkt) for wkt in geometry_wkts]
     picked_levels = []
     picked_global_ids = []
-    center_point = ogr.Geometry(ogr.wkbPoint)
-    for i, center_coord in enumerate(batch_centers):
-        center_point.SetPoint(0, center_coord[0], center_coord[1])
+    
+    box_geometry = ogr.Geometry(ogr.wkbPolygon)
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for i in range(len(batch_boxes) // 4):
+        bbox = batch_boxes[i * 4:i * 4 + 4]
+        minX, minY, maxX, maxY = bbox
+        ring.Empty()
+        ring.AddPoint(minX, minY)
+        ring.AddPoint(maxX, minY)
+        ring.AddPoint(maxX, maxY)
+        ring.AddPoint(minX, maxY)
+        ring.AddPoint(minX, minY) 
+        
+        box_geometry.Empty()
+        box_geometry.AddGeometry(ring)
         
         for geom in geometries:
-            if geom.Intersects(center_point) or geom.Contains(center_point):
+            if geom.Intersects(box_geometry) or geom.Contains(box_geometry):
                 picked_levels.append(batch_levels[i])
                 picked_global_ids.append(batch_global_ids[i])
                 break
     
-    center_point.Destroy()
+    ring.Destroy()
+    box_geometry.Destroy()
     for geom in geometries:
         geom.Destroy()
     

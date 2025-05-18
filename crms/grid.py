@@ -508,6 +508,40 @@ class Grid(IGrid):
         """
         min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, np.array([global_id]))
         return (min_xs[0] + max_xs[0]) / 2, (min_ys[0] + max_ys[0]) / 2
+    
+    def get_multi_grid_bboxes(self, levels: list[int], global_ids: list[int]) -> list[float]:
+        """Method to get bounding boxes of multiple grids
+
+        Args:
+            levels (list[int]): levels of the grids
+            global_ids (list[int]): global ids of the grids
+
+        Returns:
+            list[float]: list of bounding boxes of the grids, formatted as [grid1_min_x, grid1_min_y, grid1_max_x, grid1_max_y, grid2_min_x, grid2_min_y, grid2_max_x, grid2_max_y, ...]
+        """
+        if not levels or not global_ids:
+            return []
+        
+        levels_np = np.array(levels, dtype=np.uint8)
+        global_ids_np = np.array(global_ids, dtype=np.uint32)
+        result_array = np.empty((len(levels), 4), dtype=np.float64)
+        
+        # Process according to levels
+        unique_levels = np.unique(levels_np)
+        for level in unique_levels:
+            levels_mask = levels_np == level
+            current_global_ids = global_ids_np[levels_mask]
+            original_indices = np.where(levels_mask)[0]
+            
+            min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, current_global_ids)
+            result_array[original_indices] = np.column_stack((min_xs, min_ys, max_xs, max_ys))
+
+            # for i, idx in enumerate(original_indices):
+            #     result_array[idx, 0] = min_xs[i]
+            #     result_array[idx, 1] = min_ys[i]
+            #     result_array[idx, 2] = max_xs[i]
+            #     result_array[idx, 3] = max_ys[i]
+        return result_array.flatten().tolist()
 
     def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:
         """Method to get center coordinates of multiple grids
@@ -521,7 +555,6 @@ class Grid(IGrid):
         """
 
         # Group global_ids and their original indices by level
-        # This dictionary will map each level to a list of global_ids and their original indices
         level_data_map = {}
         for i, (level, global_id) in enumerate(zip(levels, global_ids)):
             if level not in level_data_map:

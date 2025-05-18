@@ -255,6 +255,21 @@ class MultiGridCenters:
         lat = table.column('lat').to_pylist()
         return list(zip(lon, lat))
 
+@cc.transferable
+class FloatArray:
+    def serialize(data: list[float]) -> bytes:
+        schema = pa.schema([
+            pa.field('data', pa.float64())
+        ])
+        data = {'data': data}
+        table = pa.Table.from_pydict(data, schema=schema)
+        return cc.message.serialize_from_table(table)
+
+    def deserialize(arrow_bytes: bytes) -> list[float]:
+        table = cc.message.deserialize_to_table(arrow_bytes)
+        data = table.column('data').to_pylist()
+        return data
+
 # Define ICRM ###########################################################
 
 @cc.icrm
@@ -286,4 +301,7 @@ class IGrid:
         ...
     
     def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:
+        ...
+    
+    def get_multi_grid_bboxes(self, levels: list[int], global_ids: list[int]) -> list[float]:
         ...
