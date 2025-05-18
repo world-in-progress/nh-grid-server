@@ -105,8 +105,8 @@ class MultiGridInfo(BaseModel):
         Format: [4 bytes for length, followed by level bytes, followed by global id bytes]
         """
         
-        level_bytes = np.array(self.levels, dtype=np.int8).tobytes()
-        global_id_bytes = np.array(self.global_ids, dtype=np.int32).tobytes()
+        level_bytes = np.array(self.levels, dtype=np.uint8).tobytes()
+        global_id_bytes = np.array(self.global_ids, dtype=np.uint32).tobytes()
         
         level_length = len(level_bytes).to_bytes(4, byteorder='little')
         padding_size = (4 - (len(level_length) + len(level_bytes)) % 4) % 4

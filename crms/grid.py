@@ -26,9 +26,9 @@ ATTR_ELEVATION = 'elevation'
 GRID_SCHEMA: pa.Schema = pa.schema([
     (ATTR_DELETED, pa.bool_()),
     (ATTR_ACTIVATE, pa.bool_()), 
-    (ATTR_TYPE, pa.int8()),
-    (ATTR_LEVEL, pa.int8()),
-    (ATTR_GLOBAL_ID, pa.int32()),
+    (ATTR_TYPE, pa.uint8()),
+    (ATTR_LEVEL, pa.uint8()),
+    (ATTR_GLOBAL_ID, pa.uint32()),
     (ATTR_ELEVATION, pa.float64())
 ])
 
@@ -178,12 +178,12 @@ class Grid(IGrid):
         total_height = self.level_info[level]['height']
         num_grids = total_width * total_height
         
-        global_ids = np.arange(num_grids, dtype=np.int32)
+        global_ids = np.arange(num_grids, dtype=np.uint32)
         grid_data = {
             ATTR_ACTIVATE: np.full(num_grids, True),
             ATTR_DELETED: np.full(num_grids, False, dtype=np.bool_),
-            ATTR_TYPE: np.zeros(num_grids, dtype=np.int8),
-            ATTR_LEVEL: np.full(num_grids, level, dtype=np.int8),
+            ATTR_TYPE: np.zeros(num_grids, dtype=np.uint8),
+            ATTR_LEVEL: np.full(num_grids, level, dtype=np.uint8),
             ATTR_GLOBAL_ID: global_ids,
             ATTR_ELEVATION: np.full(num_grids, -9999.0, dtype=np.float64)
         }
@@ -535,8 +535,8 @@ class Grid(IGrid):
         # Process each group (level)
         for level, data in level_data_map.items():
             # Convert the list of global_ids for the current level to a NumPy array
-            # ATTR_GLOBAL_ID is int32, so specifying dtype for consistency and potential optimization.
-            g_ids_np = np.array(data['ids'], dtype=np.int32)
+            # ATTR_GLOBAL_ID is uint32, so specifying dtype for consistency and potential optimization.
+            g_ids_np = np.array(data['ids'], dtype=np.uint32)
 
             # Call _get_coordinates once for all global_ids in the current level group
             min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, g_ids_np)

@@ -50,13 +50,13 @@ class GridAttribute:
     """
     Attributes of Grid
     ---
-    - level (int8): the level of the grid
-    - type (int8): the type of the grid, default to 0
+    - level (uint8): the level of the grid
+    - type (uint8): the type of the grid, default to 0
     - activate (bool), the subdivision status of the grid
     - deleted (bool): the deletion status of the grid, default to False
     - elevation (float64): the elevation of the grid, default to -9999.0
-    - global_id (int32): the global id within the bounding box that subdivided by grids all in the level of this grid
-    - local_id (int32): the local id within the parent grid that subdivided by child grids all in the level of this grid
+    - global_id (uint32): the global id within the bounding box that subdivided by grids all in the level of this grid
+    - local_id (uint32): the local id within the parent grid that subdivided by child grids all in the level of this grid
     - min_x (float64): the min x coordinate of the grid
     - min_y (float64): the min y coordinate of the grid
     - max_x (float64): the max x coordinate of the grid
@@ -78,10 +78,10 @@ class GridAttribute:
         schema = pa.schema([
             pa.field('deleted', pa.bool_()),
             pa.field('activate', pa.bool_()),
-            pa.field('type', pa.int8()),
-            pa.field('level', pa.int8()),
-            pa.field('global_id', pa.int32()),
-            pa.field('local_id', pa.int32(), nullable=True),
+            pa.field('type', pa.uint8()),
+            pa.field('level', pa.uint8()),
+            pa.field('global_id', pa.uint32()),
+            pa.field('local_id', pa.uint32(), nullable=True),
             pa.field('elevation', pa.float64()),
             pa.field('min_x', pa.float64(), nullable=True),
             pa.field('min_y', pa.float64(), nullable=True),
@@ -112,8 +112,8 @@ class GridAttribute:
 class GridInfo:
     def serialize(level: int, global_id: int) -> bytes:
         schema = pa.schema([
-            pa.field('level', pa.int8()),
-            pa.field('global_id', pa.pa.int32())
+            pa.field('level', pa.uint8()),
+            pa.field('global_id', pa.uint32())
         ])
         
         data = {
@@ -135,8 +135,8 @@ class GridInfo:
 class PeerGridInfos:
     def serialize(level: int, global_ids: list[int]) -> bytes:
         schema = pa.schema([
-            pa.field('level', pa.int8()),
-            pa.field('global_ids', pa.list_(pa.int32()))
+            pa.field('level', pa.uint8()),
+            pa.field('global_ids', pa.list_(pa.uint32()))
         ])
         
         data = {
@@ -158,13 +158,13 @@ class PeerGridInfos:
 class GridInfos:
     def serialize(levels: list[int], global_ids: list[int]) -> bytes:
         schema = pa.schema([
-            pa.field('levels', pa.int8()),
-            pa.field('global_ids', pa.int32())
+            pa.field('levels', pa.uint8()),
+            pa.field('global_ids', pa.uint32())
         ])
         table = pa.Table.from_arrays(
             [
-                pa.array(levels, type=pa.int8()), 
-                pa.array(global_ids, type=pa.int32())
+                pa.array(levels, type=pa.uint8()), 
+                pa.array(global_ids, type=pa.uint32())
             ],
             schema=schema
         )
