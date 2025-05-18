@@ -273,7 +273,7 @@ class IGrid:
     def delete_grids(self, levels: list[int], global_ids: list[int]):
         ...
     
-    def get_parent_keys(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
+    def get_parents(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
 
     def get_grid_infos(self, level: int, global_ids: list[int]) -> list[GridAttribute]:
