@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc as ipc
+from collections import Counter
 from icrms.igrid import IGrid, GridSchema, GridAttribute
 
 # Const ##############################
@@ -227,6 +228,10 @@ class Grid(IGrid):
         v = global_id // total_width
         return (v // sub_height) * sub_width + (u // sub_width)
     
+    def _get_subdivide_rule(self, level: int) -> tuple[int, int]:
+        subdivide_rule = self.subdivide_rules[level - 1]
+        return subdivide_rule[0], subdivide_rule[1]
+    
     def _get_coordinates(self, level: int, global_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Method to calculate coordinates for provided grids having same level
         
@@ -310,8 +315,8 @@ class Grid(IGrid):
             first_size=self.first_size,
             subdivide_rules=self.subdivide_rules
         )
-      
-    def get_parent_keys(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
+
+    def get_parents(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         """Method to get parent keys for provided grids having same level
 
         Args:
@@ -319,19 +324,21 @@ class Grid(IGrid):
             global_ids (list[int]): global_ids of provided grids
 
         Returns:
-            parent_keys (list[str]): parent keys of provided grids, organized by list of strings in the format "level-global_id"
+            multi_parent_info (tuple[list[int], list[int]]): parent levels and global_ids of provided grids
         """
-        parent_keys: list[str | None]  = []
+        parent_set: set[tuple[int, int]] = set()
         for level, global_id in zip(levels, global_ids):
             if level == 1:
-                parent_keys.append(None)
+                parent_set.add((level, global_id))
                 continue
             
             parent_global_id = self._get_parent_global_id(level, global_id)
-            parent_key = f'{level - 1}-{parent_global_id}'
-            parent_keys.append(parent_key)
-        return parent_keys
-    
+            parent_set.add((level - 1, parent_global_id))
+        if not parent_set:
+            return ([], [])
+        
+        return tuple(map(list, zip(*parent_set)))
+
     def get_grid_infos(self, level: int, global_ids: list[int]) -> list[GridAttribute]:
         """Method to get all attributes for provided grids having same level
 
@@ -523,7 +530,7 @@ class Grid(IGrid):
             level_data_map[level]['indices'].append(i)
 
         # Pre-allocate a list to store results in the original order
-        results = [None] * len(levels)
+        results: list[tuple[float, float]] = [None] * len(levels)
 
         # Process each group (level)
         for level, data in level_data_map.items():
@@ -545,3 +552,74 @@ class Grid(IGrid):
                 results[original_index] = (center_xs[i], center_ys[i])
 
         return results
+
+    def merge_multi_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
+        """Merges multiple child grids into their respective parent grid
+
+        This operation typically deactivates the specified child grids and
+        activates their common parent grid.  
+        Merging is only possible if all child grids are provided.
+
+        Args:
+            levels (list[int]): The levels of the child grids to be merged.
+            global_ids (list[int]): The global IDs of the child grids to be merged.
+
+        Returns:
+            tuple[list[int], list[int]]: The levels and global IDs of the activated parent grids.
+        """
+        if not levels or not global_ids:
+            return [], []
+        
+        # Get all parent candidates from the provided child grids
+        parent_candidates: list[tuple[int, int]] = []
+        for level, global_id in zip(levels, global_ids):
+            if level == 1:
+                continue
+            else:
+                parent_level = level - 1
+                parent_global_id = self._get_parent_global_id(level, global_id)
+                parent_candidates.append((parent_level, parent_global_id))
+        if not parent_candidates:
+            return [], []
+        
+        # Get parents indicies if all children are provided
+        parent_indices_to_activate = []
+        parent_count = Counter(parent_candidates)
+        activated_parents: list[tuple[int, int]] = []
+        for (parent_level, parent_global_id), count in parent_count.items():
+            sub_width, sub_height = self._get_subdivide_rule(parent_level)
+            expected_children_count = sub_width * sub_height
+            
+            if count == expected_children_count:
+                idx_key = (parent_level, parent_global_id)
+                if idx_key in self.grids.index:
+                    parent_indices_to_activate.append(idx_key)
+                    activated_parents.append(idx_key)
+        
+        if not activated_parents:
+            return [], []
+        
+        # Batch activate parent grids
+        if parent_indices_to_activate:
+            self.grids.loc[parent_indices_to_activate, ATTR_ACTIVATE] = True
+        
+        # Get all children of activated parents
+        children_indices_to_deactivate = []
+        for parent_level, parent_global_id in activated_parents:
+            child_level_of_activated_parent = parent_level + 1
+            theoretical_child_global_ids = self._get_grid_children_global_ids(parent_level, parent_global_id)
+            if theoretical_child_global_ids:
+                for child_global_id in theoretical_child_global_ids:
+                    idx_key = (child_level_of_activated_parent, child_global_id)
+                    if idx_key in self.grids.index:
+                        children_indices_to_deactivate.append(idx_key)
+        
+        # Batch deactivate child grids
+        if children_indices_to_deactivate:
+            unique_children_indices = list(set(children_indices_to_deactivate))
+            if unique_children_indices:
+                 self.grids.loc[unique_children_indices, ATTR_ACTIVATE] = False
+        
+        result_levels, result_global_ids = zip(*activated_parents)
+        return list(result_levels), list(result_global_ids)
+        
