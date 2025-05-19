@@ -297,6 +297,9 @@ class IGrid:
     def get_active_grid_infos(self) -> tuple[list[int], list[int]]:
         ...
     
+    def get_deleted_grid_infos(self) -> tuple[list[int], list[int]]:
+        ...
+    
     def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
         ...
     

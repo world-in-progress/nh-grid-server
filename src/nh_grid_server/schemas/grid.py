@@ -81,6 +81,10 @@ class GridMeta(BaseModel):
         project_name = APP_CONTEXT['current_project']
         subproject_name = APP_CONTEXT['current_subproject']
         return GridMeta.from_subproject(project_name, subproject_name)
+    
+    # TODO: BoundingBox for recoverable grid
+# class BoundingBox(BaseModel):
+    
 
 class MultiGridInfo(BaseModel):
     levels: list[int]

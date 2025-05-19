@@ -496,6 +496,15 @@ class Grid(IGrid):
         active_grids = self.grids[self.grids[ATTR_ACTIVATE] == True]
         return active_grids.index.get_level_values(0).tolist(), active_grids.index.get_level_values(1).tolist()
     
+    def get_deleted_grid_infos(self) -> tuple[list[int], list[int]]:
+        """Method to get all deleted grids' global ids and levels
+
+        Returns:
+            tuple[list[int], list[int]]: deleted grids' global ids and levels
+        """
+        deleted_grids = self.grids[self.grids[ATTR_DELETED] == True]
+        return deleted_grids.index.get_level_values(0).tolist(), deleted_grids.index.get_level_values(1).tolist()
+    
     def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
         """Method to get center coordinates of a grid
 

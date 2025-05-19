@@ -42,11 +42,24 @@ def get_grid_meta(project_name: str, subproject_name: str):
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
-def activate_grid_infos():
+def activate_grid_info():
     
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.get_active_grid_infos()
         
+        grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
+        
+        return Response(
+            content=grid_infos.combine_bytes(),
+            media_type='application/octet-stream'
+        )
+
+@router.get('/deleted-info', response_class=Response, response_description='Returns deleted grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
+def deleted_grid_infos():
+    
+    with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
+        levels, global_ids = grid_interface.get_deleted_grid_infos()
+
         grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
         
         return Response(
@@ -100,6 +113,10 @@ def delete_grids(grid_info: grid.MultiGridInfo):
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete grids: {str(e)}')
+
+# TODO: Implement recover grids
+# @router.post('/recover', response_class=Response, response_description='Returns picked grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
+# def recover_grids(grid_info: )
 
 @router.get('/pick', response_class=Response, response_description='Returns picked grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def pick_grids_by_feature(feature_dir: str):
