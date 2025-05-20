@@ -99,32 +99,6 @@ class Grid(IGrid):
         Returns:
             bool: Whether the save was successful
         """
-        
-        # save_path = self.grid_file_path
-        # if not save_path:
-        #     print('No file path provided for saving grid data')
-        #     return False
-        
-        # try:
-        #     if self.grids.empty:
-        #         print('No grid data to save')
-        #         return False
-            
-        #     # Reset index to include level and globale_id columns in the table
-        #     df = self.grids.reset_index()
-        #     table = pa.Table.from_pandas(df, schema=GRID_SCHEMA)
-            
-        #     # Write to Arrow file
-        #     with pa.ipc.new_file(save_path, GRID_SCHEMA) as writer:
-        #         writer.write_table(table)
-            
-        #     print(f'Successfully saved grid data to {save_path}')
-        #     return True
-        
-        # except Exception as e:
-        #     print(f'Failed to save grid data: {str(e)}')
-        #     return False
-        
         try:
             if not self._save()['success']:
                 raise Exception('Failed to save grid data')
