@@ -403,10 +403,11 @@ class Grid(IGrid):
             return [], []
         
         # Get all parents
+        existing_parents = []
         parent_idx_keys = list(zip(levels, global_ids))
         parent_idx = pd.MultiIndex.from_tuples(parent_idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
-        existing_parents = parent_idx.intersection(self.grids.index)
-        if len(existing_parents) == 0:
+        existing_parents.extend(parent_idx.intersection(self.grids.index))
+        if not existing_parents:
             return [], []
         
         # Filter for valid parents (activated and not deleted)
@@ -416,10 +417,6 @@ class Grid(IGrid):
             return [], []
 
         # Collect all child grid information
-        all_child_data = []
-        all_child_levels = []
-        all_child_global_ids = []
-        
         total_children_count = 0
         for level, _ in valid_parents.index:
             rule = self.subdivide_rules[level]
@@ -431,7 +428,7 @@ class Grid(IGrid):
         all_deleted = np.full(total_children_count, False, dtype=np.bool_)
         all_activate = np.full(total_children_count, True, dtype=np.bool_)
         all_type = np.zeros(total_children_count, dtype=np.uint8)
-        all_elevation = np.full(total_children_count, -9999.0, dtype=np.float32)
+        all_elevation = np.full(total_children_count, -9999.0, dtype=np.float64)
         
         # Process each parent grid
         child_index = 0
@@ -473,38 +470,11 @@ class Grid(IGrid):
             ATTR_ELEVATION: all_elevation
         }
         
-        #     child_global_ids = [child_global_id for child_global_id in child_global_ids]
-        #     all_child_levels.extend([child_level] * len(child_global_ids))
-        #     all_child_global_ids.extend(child_global_ids)
-            
-        #     # Generate child records efficiently
-        #     child_level_array = np.full(len(child_global_ids), child_level, dtype=np.uint8)
-        #     child_global_ids_array = np.array(child_global_ids, dtype=np.uint32)
-        #     deleted_array = np.full(len(child_global_ids), False, dtype=np.bool_)
-        #     activate_array = np.full(len(child_global_ids), True, dtype=np.bool_)
-        #     type_array = np.zeros(len(child_global_ids), dtype=np.uint8)
-        #     elevation_array = np.full(len(child_global_ids), -9999.0, dtype=np.float32)
-
-        #     # Add all records at once
-        #     for i in range(len(child_global_ids)):
-        #         all_child_data.append((
-        #             child_level_array[i], 
-        #             child_global_ids_array[i],
-        #             deleted_array[i], 
-        #             activate_array[i], 
-        #             type_array[i], 
-        #             elevation_array[i]
-        #         ))
-                
-        # if not all_child_data:
-        #     return [], []
-        
         # Make child DataFrame
-        children = pd.DataFrame(child_data)
-        # children = pd.DataFrame(
-        #     all_child_data,
-        #     columns=[ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, ATTR_ELEVATION]
-        # )
+        children = pd.DataFrame(child_data, columns=[
+            ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, 
+            ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_ELEVATION
+        ])
         children.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
         
         # Update existing children and add new ones
@@ -638,7 +608,6 @@ class Grid(IGrid):
         # Process each group (level)
         for level, data in level_data_map.items():
             # Convert the list of global_ids for the current level to a NumPy array
-            # ATTR_GLOBAL_ID is uint32, so specifying dtype for consistency and potential optimization.
             g_ids_np = np.array(data['ids'], dtype=np.uint32)
 
             # Call _get_coordinates once for all global_ids in the current level group

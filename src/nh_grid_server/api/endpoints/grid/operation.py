@@ -73,7 +73,6 @@ def subdivide_grids(grid_info: grid.MultiGridInfo):
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.subdivide_grids(grid_info.levels, grid_info.global_ids)
         subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-        
         return Response(
             content=subdivide_info.combine_bytes(),
             media_type='application/octet-stream'
