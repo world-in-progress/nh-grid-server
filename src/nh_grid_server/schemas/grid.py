@@ -90,18 +90,6 @@ class MultiGridInfo(BaseModel):
     levels: list[int]
     global_ids: list[int]
     
-    @field_validator('levels')
-    def check_levels(cls, v):
-        if len(v) == 0:
-            raise ValueError('Levels cannot be empty')
-        return v
-    
-    @field_validator('global_ids')
-    def check_global_ids(cls, v):
-        if len(v) == 0:
-            raise ValueError('Global IDs cannot be empty')
-        return v
-    
     def combine_bytes(self):
         """
         Combine the grid information into a single bytes object

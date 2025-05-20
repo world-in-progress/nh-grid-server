@@ -282,7 +282,7 @@ class IGrid:
     def get_schema(self) -> GridSchema:
         ...
     
-    def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
+    def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
         
     def delete_grids(self, levels: list[int], global_ids: list[int]):

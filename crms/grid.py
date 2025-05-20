@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc as ipc
+import multiprocessing as mp
+from functools import partial
 from collections import Counter
 from icrms.igrid import IGrid, GridSchema, GridAttribute
 
@@ -385,7 +387,7 @@ class Grid(IGrid):
             for _, row in filtered_grids.iterrows()
         ]
     
-    def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> list[str | None]:
+    def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         """
         Subdivide grids by turning off parent grids' activate flag and activating children's activate flags
         if the parent grid is activate and not deleted.
@@ -395,55 +397,120 @@ class Grid(IGrid):
             global_ids (list[int]): Array of global IDs for each grid to subdivide
 
         Returns:
-            grid_keys (list[str]): List of child grid keys in the format "level-global_id"
+            tuple[list[int], list[int]]: The levels and global IDs of the subdivided grids.
         """
+        if not levels or not global_ids:
+            return [], []
+        
         # Get all parents
         parent_idx_keys = list(zip(levels, global_ids))
         parent_idx = pd.MultiIndex.from_tuples(parent_idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
         existing_parents = parent_idx.intersection(self.grids.index)
         if len(existing_parents) == 0:
-            return []
+            return [], []
         
-        # Filter for valid parents
+        # Filter for valid parents (activated and not deleted)
         valid_parents = self.grids.loc[existing_parents]
         valid_parents = valid_parents[(valid_parents[ATTR_ACTIVATE]) & (~valid_parents[ATTR_DELETED])]
         if valid_parents.empty:
-            return []
-        
+            return [], []
+
         # Collect all child grid information
         all_child_data = []
-        all_child_keys = []
+        all_child_levels = []
+        all_child_global_ids = []
+        
+        total_children_count = 0
+        for level, _ in valid_parents.index:
+            rule = self.subdivide_rules[level]
+            total_children_count += rule[0] * rule[1]
+        
+        # Pre-allocate arrays for all child data
+        all_child_levels = np.empty(total_children_count, dtype=np.uint8)
+        all_child_global_ids = np.empty(total_children_count, dtype=np.uint32)
+        all_deleted = np.full(total_children_count, False, dtype=np.bool_)
+        all_activate = np.full(total_children_count, True, dtype=np.bool_)
+        all_type = np.zeros(total_children_count, dtype=np.uint8)
+        all_elevation = np.full(total_children_count, -9999.0, dtype=np.float32)
         
         # Process each parent grid
+        child_index = 0
         for (level, global_id) in valid_parents.index:
             child_global_ids = self._get_grid_children_global_ids(level, global_id)
             if not child_global_ids:
                 continue
             
-            # Generate child keys for return value
             child_level = level + 1
-            child_keys = [f'{child_level}-{child_global_id}' for child_global_id in child_global_ids]
-            all_child_keys.extend(child_keys)
+            child_count = len(child_global_ids)
+            end_index = child_index + child_count
+            all_child_levels[child_index:end_index] = child_level
+            all_child_global_ids[child_index:end_index] = child_global_ids
             
-            # Create child records
-            for child_global_id in child_global_ids:
-                all_child_data.append((
-                    child_level, child_global_id, 
-                    False, True, 0, -9999.0,
-                ))
-        if not all_child_data:
-            return []
+            # Update the current position
+            child_index = end_index
+        
+        # If no children were added, return early
+        if child_index == 0:
+            return [], []
+        
+        # Trim arrays to actual size used
+        if child_index < total_children_count:
+            all_child_levels = all_child_levels[:child_index]
+            all_child_global_ids = all_child_global_ids[:child_index]
+            all_deleted = all_deleted[:child_index]
+            all_activate = all_activate[:child_index]
+            all_type = all_type[:child_index]
+            all_elevation = all_elevation[:child_index]
+        
+        
+        # Create data for DataFrame construction
+        child_data = {
+            ATTR_LEVEL: all_child_levels,
+            ATTR_GLOBAL_ID: all_child_global_ids,
+            ATTR_DELETED: all_deleted,
+            ATTR_ACTIVATE: all_activate,
+            ATTR_TYPE: all_type,
+            ATTR_ELEVATION: all_elevation
+        }
+        
+        #     child_global_ids = [child_global_id for child_global_id in child_global_ids]
+        #     all_child_levels.extend([child_level] * len(child_global_ids))
+        #     all_child_global_ids.extend(child_global_ids)
+            
+        #     # Generate child records efficiently
+        #     child_level_array = np.full(len(child_global_ids), child_level, dtype=np.uint8)
+        #     child_global_ids_array = np.array(child_global_ids, dtype=np.uint32)
+        #     deleted_array = np.full(len(child_global_ids), False, dtype=np.bool_)
+        #     activate_array = np.full(len(child_global_ids), True, dtype=np.bool_)
+        #     type_array = np.zeros(len(child_global_ids), dtype=np.uint8)
+        #     elevation_array = np.full(len(child_global_ids), -9999.0, dtype=np.float32)
+
+        #     # Add all records at once
+        #     for i in range(len(child_global_ids)):
+        #         all_child_data.append((
+        #             child_level_array[i], 
+        #             child_global_ids_array[i],
+        #             deleted_array[i], 
+        #             activate_array[i], 
+        #             type_array[i], 
+        #             elevation_array[i]
+        #         ))
+                
+        # if not all_child_data:
+        #     return [], []
         
         # Make child DataFrame
-        children = pd.DataFrame(
-            all_child_data,
-            columns=[ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, ATTR_ELEVATION]
-        )
+        children = pd.DataFrame(child_data)
+        # children = pd.DataFrame(
+        #     all_child_data,
+        #     columns=[ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, ATTR_ELEVATION]
+        # )
         children.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
         
         # Update existing children and add new ones
         child_idx = children.index
         existing_mask = child_idx.isin(self.grids.index)
+        
         if existing_mask.any():
             # Update existing children attributes
             existing_indices = child_idx[existing_mask]
@@ -457,12 +524,11 @@ class Grid(IGrid):
         else:
             # All children are new
             self.grids = pd.concat([self.grids, children])
-    
+
         # Deactivate parent grids
-        valid_parent_indices = valid_parents.index
-        self.grids.loc[valid_parent_indices, ATTR_ACTIVATE] = False
-        
-        return all_child_keys
+        self.grids.loc[valid_parents.index, ATTR_ACTIVATE] = False
+
+        return all_child_levels.tolist(), all_child_global_ids.tolist()
     
     def delete_grids(self, levels: list[int], global_ids: list[int]):
         """Method to delete grids.
@@ -659,4 +725,3 @@ class Grid(IGrid):
         
         result_levels, result_global_ids = zip(*activated_parents)
         return list(result_levels), list(result_global_ids)
-        
