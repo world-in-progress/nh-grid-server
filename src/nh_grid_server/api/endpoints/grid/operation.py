@@ -30,7 +30,6 @@ def get_grid_meta(project_name: str, subproject_name: str):
     """
     Get grid meta information for a specific subproject
     """
-
     try:
         project_dir = Path(settings.PROJECT_DIR, project_name)
         subproject_dir = project_dir / subproject_name
@@ -43,7 +42,6 @@ def get_grid_meta(project_name: str, subproject_name: str):
 
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():
-    
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.get_active_grid_infos()
         
@@ -56,7 +54,6 @@ def activate_grid_info():
 
 @router.get('/deleted-info', response_class=Response, response_description='Returns deleted grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def deleted_grid_infos():
-    
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.get_deleted_grid_infos()
 
@@ -69,7 +66,6 @@ def deleted_grid_infos():
 
 @router.post('/subdivide', response_class=Response, response_description='Returns subdivided grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def subdivide_grids(grid_info: grid.MultiGridInfo):
-    
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.subdivide_grids(grid_info.levels, grid_info.global_ids)
         subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
@@ -83,23 +79,19 @@ def merge_grids(grid_info: grid.MultiGridInfo):
     """
     Merge grids based on the provided grid information
     """
-    
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
-        keys = grid_interface.get_parent(grid_info.levels, grid_info.global_ids)
-
-        levels, global_ids = _keys_to_levels_global_ids(keys)
+        levels, global_ids = grid_interface.merge_multi_grids(grid_info.levels, grid_info.global_ids)
         merge_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-        
         return Response(
             content=merge_info.combine_bytes(),
             media_type='application/octet-stream'
         )
+        
 @router.post('/delete', response_model=base.BaseResponse)
 def delete_grids(grid_info: grid.MultiGridInfo):
     """
     Delete grids based on the provided grid information
     """
-    
     try:
         with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
             grid_interface.delete_grids(grid_info.levels, grid_info.global_ids)

@@ -228,7 +228,7 @@ class Grid(IGrid):
         sub_height = self.subdivide_rules[level - 1][1]
         u = global_id % total_width
         v = global_id // total_width
-        return (v // sub_height) * sub_width + (u // sub_width)
+        return (v // sub_height) * self.level_info[level - 1]['width'] + (u // sub_width)
     
     def _get_subdivide_rule(self, level: int) -> tuple[int, int]:
         subdivide_rule = self.subdivide_rules[level - 1]
@@ -659,7 +659,7 @@ class Grid(IGrid):
         parent_count = Counter(parent_candidates)
         activated_parents: list[tuple[int, int]] = []
         for (parent_level, parent_global_id), count in parent_count.items():
-            sub_width, sub_height = self._get_subdivide_rule(parent_level)
+            sub_width, sub_height = self.subdivide_rules[parent_level]
             expected_children_count = sub_width * sub_height
             
             if count == expected_children_count:

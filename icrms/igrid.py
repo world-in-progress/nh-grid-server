@@ -308,3 +308,6 @@ class IGrid:
     
     def get_multi_grid_bboxes(self, levels: list[int], global_ids: list[int]) -> list[float]:
         ...
+        
+    def merge_multi_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
+        ...
