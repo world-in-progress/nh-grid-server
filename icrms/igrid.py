@@ -311,3 +311,6 @@ class IGrid:
         
     def merge_multi_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
+        
+    def recover_multi_grids(self, levels: list[int], global_ids: list[int]):
+        ...

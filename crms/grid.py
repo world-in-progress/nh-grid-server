@@ -694,3 +694,25 @@ class Grid(IGrid):
         
         result_levels, result_global_ids = zip(*activated_parents)
         return list(result_levels), list(result_global_ids)
+    
+    def recover_multi_grids(self, levels: list[int], global_ids: list[int]):
+        """Recovers multiple deleted grids by activating them
+
+        Args:
+            levels (list[int]): The levels of the grids to be recovered.
+            global_ids (list[int]): The global IDs of the grids to be recovered.
+        """
+        if not levels or not global_ids:
+            return
+        
+        # Get all indices to recover
+        idx_keys = list(zip(levels, global_ids))
+        idx = pd.MultiIndex.from_tuples(idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
+        existing_grids = idx.intersection(self.grids.index)
+        
+        if len(existing_grids) == 0:
+            return
+        
+        # Activate these grids
+        self.grids.loc[existing_grids, ATTR_ACTIVATE] = True
+        self.grids.loc[existing_grids, ATTR_DELETED] = False

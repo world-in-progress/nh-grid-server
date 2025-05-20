@@ -103,9 +103,21 @@ def delete_grids(grid_info: grid.MultiGridInfo):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete grids: {str(e)}')
 
-# TODO: Implement recover grids
-# @router.post('/recover', response_class=Response, response_description='Returns picked grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
-# def recover_grids(grid_info: )
+@router.post('/recover', response_model=base.BaseResponse)
+def recover_grids(grid_info: grid.MultiGridInfo):
+    """
+    Recover grids based on the provided grid information
+    """
+    try:
+        with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
+            grid_interface.recover_multi_grids(grid_info.levels, grid_info.global_ids)
+
+            return base.BaseResponse(
+                success=True,
+                message='Grids recovered successfully'
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to recover grids: {str(e)}')
 
 @router.get('/pick', response_class=Response, response_description='Returns picked grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def pick_grids_by_feature(feature_dir: str):
