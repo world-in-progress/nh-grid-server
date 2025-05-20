@@ -249,29 +249,24 @@ def pick_grids_by_feature(feature_dir: str):
             source_sr = None
         if data_source:
             data_source = None
+
+@router.get('/save', response_model=base.BaseResponse)
+def save_grids():
+    """
+    Save the current grid state to a file.
+    """
+    try:
+        with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
+            result = grid_interface.save()
+            logging.info(f'Grid saved successfully: {result}')
+            return base.BaseResponse(
+                success=result['success'],
+                message=result['message']
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to save grid: {str(e)}')
     
 # Helpers ##################################################
-
-def _keys_to_levels_global_ids(keys: list[str | None]) -> tuple[list[int], list[int]]:
-    """
-    Convert grid keys to levels and global IDs.
-    Args:
-        keys (list[str | None]): List of grid keys in the format "level-global_id"
-    Returns:
-        tuple[list[int], list[int]]: Tuple of two lists - levels and global IDs
-    """
-    if not keys:
-        return [], []
-
-    levels: list[int] = []
-    global_ids: list[int] = []
-    for key in keys:
-        if key is None:
-            continue
-        level, global_id = map(int, key.split('-'))
-        levels.append(level)
-        global_ids.append(global_id)
-    return levels, global_ids
 
 def _process_grid_batch(batch_data, geometry_wkts):
     # _ is batch_indices

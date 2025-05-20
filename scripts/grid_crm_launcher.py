@@ -56,9 +56,15 @@ if __name__ == '__main__':
         )
     subdivide_rules.append([1, 1])
     
+    # Get grid file path
+    if temp == 'True':
+        grid_file_path = ''
+    else:
+        grid_file_path = Path(grid_project_path, 'grids.arrow')
+    
     # Init CRM
     crm = Grid(
-        epsg, bounds, first_size, subdivide_rules, 
+        epsg, bounds, first_size, subdivide_rules, grid_file_path
     )
     
     # Launch CRM server

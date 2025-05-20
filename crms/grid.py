@@ -84,7 +84,7 @@ class Grid(IGrid):
         if grid_file_path and os.path.exists(grid_file_path):
             try:
                 # Load grid data from Arrow file
-                self._load_grid_from_file(grid_file_path, batch_size=50000)
+                self._load_grid_from_file(batch_size=50000)
             except Exception as e:
                 print(f'Failed to load grid data from file: {str(e)}, the grid will be initialized using default method')
                 self._initialize_default_grid(batch_size=50000)
@@ -94,46 +94,82 @@ class Grid(IGrid):
             self._initialize_default_grid(batch_size=50000)
             print('Successfully initialized default grid data')
      
-    def terminate(self):
+    def terminate(self) -> bool:
         """Save the grid data to Arrow file
-
-        Args:
-            grid_file_path (str, optional): The file path to save the grid data. If None, the path provided during initialization is used
-
         Returns:
             bool: Whether the save was successful
         """
         
-        save_path = self.grid_file_path
-        if not save_path:
-            print('No file path provided for saving grid data')
-            return False
+        # save_path = self.grid_file_path
+        # if not save_path:
+        #     print('No file path provided for saving grid data')
+        #     return False
+        
+        # try:
+        #     if self.grids.empty:
+        #         print('No grid data to save')
+        #         return False
+            
+        #     # Reset index to include level and globale_id columns in the table
+        #     df = self.grids.reset_index()
+        #     table = pa.Table.from_pandas(df, schema=GRID_SCHEMA)
+            
+        #     # Write to Arrow file
+        #     with pa.ipc.new_file(save_path, GRID_SCHEMA) as writer:
+        #         writer.write_table(table)
+            
+        #     print(f'Successfully saved grid data to {save_path}')
+        #     return True
+        
+        # except Exception as e:
+        #     print(f'Failed to save grid data: {str(e)}')
+        #     return False
         
         try:
-            if self.grids.empty:
-                print('No grid data to save')
-                return False
-            
-            # Reset index to include level and globale_id columns in the table
-            df = self.grids.reset_index()
-            table = pa.Table.from_pandas(df, schema=GRID_SCHEMA)
-            
-            # Write to Arrow file
-            with pa.ipc.new_file(save_path, GRID_SCHEMA) as writer:
-                writer.write_table(table)
-            
-            print(f'Successfully saved grid data to {save_path}')
-            return True
-        
+            if not self._save()['success']:
+                raise Exception('Failed to save grid data')
         except Exception as e:
-            print(f'Failed to save grid data: {str(e)}')
+            print(f'Error saving grid data: {str(e)}')
             return False
 
-    def _load_grid_from_file(self, file_path: str, batch_size: int = 50000):
+    def _save(self) -> dict[str, str | bool]: 
+        save_path = self.grid_file_path
+        if not save_path:
+            return {"success": False, "message": "No file path provided for saving grid data"}
+
+        try:
+            if self.grids.empty:
+                return {"success": False, "message": "No grid data to save"}
+
+            # Create file
+            with pa.ipc.new_file(save_path, GRID_SCHEMA) as writer:
+                # Process in batches
+                batch_size = 100000
+                for chunk_start in range(0, len(self.grids), batch_size):
+                    chunk_end = min(chunk_start + batch_size, len(self.grids))
+                    
+                    # Get a slice of the dataframe
+                    chunk = self.grids.iloc[chunk_start:chunk_end]
+                    
+                    # Reset index for just this chunk
+                    chunk_reset = chunk.reset_index()
+                    
+                    # Convert to Arrow table and write
+                    table_chunk = pa.Table.from_pandas(chunk_reset, schema=GRID_SCHEMA)
+                    writer.write_table(table_chunk)
+                    
+                    # Explicitly delete temporary objects to free memory
+                    del chunk_reset, table_chunk
+
+            return {"success": True, "message": f"Successfully saved grid data to {save_path}"}
+
+        except Exception as e:
+            return {"success": False, "message": f'Failed to save grid data: {str(e)}'}
+        
+    def _load_grid_from_file(self, batch_size: int = 50000):
         """Load grid data from file streaming
 
         Args:
-            file_path (str): Arrow file path
             batch_size (int): number of records processed per batch
         """
         
@@ -716,3 +752,19 @@ class Grid(IGrid):
         # Activate these grids
         self.grids.loc[existing_grids, ATTR_ACTIVATE] = True
         self.grids.loc[existing_grids, ATTR_DELETED] = False
+    
+    def save(self) -> dict[str, bool | str]:
+        """
+        Save the grid data to an Arrow file with optimized memory usage.
+        This method writes the grid dataframe to disk using Apache Arrow format.
+        It processes the data in batches to minimize memory consumption during saving.
+        Returns:
+            dict[str, bool | str]: A dictionary containing:
+                - 'success': Boolean indicating success (True) or failure (False)
+                - 'message': A string with details about the operation result
+        Error conditions:
+            - Returns failure if no file path is set
+            - Returns failure if the grid dataframe is empty
+            - Returns failure with exception details if any error occurs during saving
+        """
+        return self._save()

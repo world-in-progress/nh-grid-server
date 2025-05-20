@@ -1,3 +1,4 @@
+import json
 import c_two as cc
 import pyarrow as pa
 
@@ -270,6 +271,18 @@ class FloatArray:
         data = table.column('data').to_pylist()
         return data
 
+@cc.transferable
+class SaveInfo:
+    def serialize(info: dict[str, bool | str]) -> bytes:
+        return json.dumps(info).encode('utf-8')
+
+    def deserialize(res_bytes: memoryview) -> dict[str, bool | str]:
+        res = json.loads(res_bytes.tobytes().decode('utf-8'))
+        return {
+            'success': res['success'],
+            'message': res['message']
+        }
+        
 # Define ICRM ###########################################################
 
 @cc.icrm
@@ -313,4 +326,7 @@ class IGrid:
         ...
         
     def recover_multi_grids(self, levels: list[int], global_ids: list[int]):
+        ...
+        
+    def save(self) -> dict[str, bool | str]:
         ...
