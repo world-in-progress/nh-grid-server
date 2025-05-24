@@ -1,4 +1,5 @@
 import os
+import logging
 import c_two as cc
 import numpy as np
 import pandas as pd
@@ -8,6 +9,9 @@ import multiprocessing as mp
 from functools import partial
 from collections import Counter
 from icrms.igrid import IGrid, GridSchema, GridAttribute
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Const ##############################
 
@@ -86,14 +90,15 @@ class Grid(IGrid):
                 # Load grid data from Arrow file
                 self._load_grid_from_file(batch_size=50000)
             except Exception as e:
-                print(f'Failed to load grid data from file: {str(e)}, the grid will be initialized using default method')
+                logger.error(f'Failed to load grid data from file: {str(e)}, the grid will be initialized using default method')
                 self._initialize_default_grid(batch_size=50000)
         else:
             # Initialize grid data using default method
-            print('grid file does not exist, initializing default grid data...')
+            logger.warning('Grid file does not exist, initializing default grid data...')
             self._initialize_default_grid(batch_size=50000)
-            print('Successfully initialized default grid data')
-     
+            logger.info('Successfully initialized default grid data')
+        logger.info('Grid initialized successfully')
+    
     def terminate(self) -> bool:
         """Save the grid data to Arrow file
         Returns:
@@ -103,10 +108,11 @@ class Grid(IGrid):
             if not self._save()['success']:
                 raise Exception('Failed to save grid data')
         except Exception as e:
-            print(f'Error saving grid data: {str(e)}')
+            logger.error(f'Error saving grid data: {str(e)}')
             return False
 
     def _save(self) -> dict[str, str | bool]: 
+        
         save_path = self.grid_file_path
         if not save_path:
             return {"success": False, "message": "No file path provided for saving grid data"}
@@ -148,39 +154,37 @@ class Grid(IGrid):
         """
         
         try:
-            with pa.ipc.open_file(self.grid_file_path)  as reader:
-                # Open the Arrow file and read the table
-                all_batches = []
+            all_dfs = []
+            arrow_batches_buffer = []
+            current_rows_in_buffer = 0
+            
+            with pa.ipc.open_file(self.grid_file_path) as reader:
+                logger.info(f'Loading grid data from {self.grid_file_path}, Total Arrow batches: {reader.num_record_batches}')
                 for i in range(reader.num_record_batches):
                     batch = reader.get_batch(i)
-                    all_batches.append(batch)
+                    arrow_batches_buffer.append(batch)
+                    current_rows_in_buffer += batch.num_rows
                     
-                    if len(all_batches) >= batch_size / batch.num_rows:
-                        partial_table = pa.Table.from_batches(all_batches, schema=GRID_SCHEMA)
-                        all_batches = []
-                        partial_df = partial_table.to_pandas(use_threads=True)
-                        partial_df.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
-                        
-                        if hasattr(self, 'grids') and not self.grids.empty:
-                            self.grids = pd.concat([self.grids, partial_df])
-                        else:
-                            self.grids = partial_df
-                
-                if all_batches:
-                    partial_table = pa.Table.from_batches(all_batches, schema=GRID_SCHEMA)
-                    partial_df = partial_table.to_pandas(use_threads=True)
-                    partial_df.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
-                        
-                    if hasattr(self, 'grids') and not self.grids.empty:
-                        self.grids = pd.concat([self.grids, partial_df])
-                    else:
-                        self.grids = partial_df
-            
+                    if current_rows_in_buffer >= batch_size or (i == reader.num_record_batches - 1 and arrow_batches_buffer):
+                        if arrow_batches_buffer:
+                            logger.debug(f'Processing {len(arrow_batches_buffer)} Arrow batches with {current_rows_in_buffer} rows.')
+                            partial_table = pa.Table.from_batches(arrow_batches_buffer, schema=GRID_SCHEMA)
+                            arrow_batches_buffer = []
+                            current_rows_in_buffer = 0
+                            
+                            partial_df = partial_table.to_pandas(use_threads=True, split_blocks=True, self_destruct=True)
+                            partial_df.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
+                            all_dfs.append(partial_df)
+                            logger.debug(f'Append DataFrame chunk. Number of chunks: {len(all_dfs)}')
+                            
+            if all_dfs:
+                logger.info(f'Concatenating {len(all_dfs)} DataFrame chunks...')
+                self.grids = pd.concat(all_dfs, copy=False)
                 self.grids = self.grids.sort_index()
-                print(f'Successfully loaded {len(self.grids)} grid records from {self.grid_file_path}')
-        
+                logger.info(f'Successfully loaded {len(self.grids)} grid records from {self.grid_file_path}')
+            
         except Exception as e:
-            print(f'Error loading grid data from file: {str(e)}')
+            logger.error(f'Error loading grid data from file: {str(e)}')
             raise e
 
     def _initialize_default_grid(self, batch_size: int = 10000):
@@ -742,3 +746,6 @@ class Grid(IGrid):
             - Returns failure with exception details if any error occurs during saving
         """
         return self._save()
+
+    # def parseTopology(self):
+        

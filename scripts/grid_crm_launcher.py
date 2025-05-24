@@ -2,6 +2,7 @@ import os
 import sys
 import math
 import json
+import logging
 import argparse
 import c_two as cc
 from pathlib import Path
@@ -9,6 +10,9 @@ from pathlib import Path
 # Import Grid (CRM)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from crms.grid import Grid
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Grid Launcher')
@@ -68,7 +72,8 @@ if __name__ == '__main__':
     )
     
     # Launch CRM server
+    logger.info('Starting CRM server...')
     server = cc.message.Server(tcp_address, crm)
     server.start()
-    print('CRM server started at', tcp_address)
+    logger.info('CRM server started at %s', tcp_address)
     server.wait_for_termination()
