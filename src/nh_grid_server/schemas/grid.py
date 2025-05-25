@@ -105,6 +105,30 @@ class MultiGridInfo(BaseModel):
         padding = b'\x00' * padding_size
         
         return level_length + level_bytes + padding + global_id_bytes
+    
+    @staticmethod
+    def from_bytes(data: bytes):
+        """
+        Create a MultiGridInfo instance from bytes data
+        
+        The data format is:
+        - First 4 bytes: length of the level bytes
+        - Next N bytes: level bytes
+        - Padding to make the total length a multiple of 4
+        - Remaining bytes: global id bytes
+        """
+        
+        if len(data) < 8:
+            raise ValueError('Data is too short to contain valid MultiGridInfo')
+        
+        level_length = int.from_bytes(data[:4], byteorder='little')
+        level_bytes = data[4:4 + level_length]
+        global_id_bytes = data[4 + level_length + (4 - (level_length % 4)) % 4:]
+        
+        levels = list(np.frombuffer(level_bytes, dtype=np.uint8))
+        global_ids = list(np.frombuffer(global_id_bytes, dtype=np.uint32))
+        
+        return MultiGridInfo(levels=levels, global_ids=global_ids)
 
 class MultiGridInfoResponse(BaseResponse):
     """Standard response schema for grid operations"""

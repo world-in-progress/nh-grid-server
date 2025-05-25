@@ -29,13 +29,12 @@ ATTR_LEVEL = 'level'
 ATTR_GLOBAL_ID = 'global_id'
 ATTR_ELEVATION = 'elevation'
 
+ATTR_INDEX_KEY = 'index_key'
+
 GRID_SCHEMA: pa.Schema = pa.schema([
     (ATTR_DELETED, pa.bool_()),
     (ATTR_ACTIVATE, pa.bool_()), 
-    (ATTR_TYPE, pa.uint8()),
-    (ATTR_LEVEL, pa.uint8()),
-    (ATTR_GLOBAL_ID, pa.uint32()),
-    (ATTR_ELEVATION, pa.float64())
+    (ATTR_INDEX_KEY, pa.uint64())
 ])
 
 @cc.iicrm
@@ -64,8 +63,7 @@ class Grid(IGrid):
         
         # Initialize grid DataFrame
         self.grids = pd.DataFrame(columns=[
-            ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, 
-            ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_ELEVATION
+            ATTR_DELETED, ATTR_ACTIVATE, ATTR_INDEX_KEY
         ])
         
         # Calculate level info for later use
@@ -88,31 +86,18 @@ class Grid(IGrid):
         if grid_file_path and os.path.exists(grid_file_path):
             try:
                 # Load grid data from Arrow file
-                self._load_grid_from_file(batch_size=50000)
+                self._load_grid_from_file()
             except Exception as e:
                 logger.error(f'Failed to load grid data from file: {str(e)}, the grid will be initialized using default method')
-                self._initialize_default_grid(batch_size=50000)
+                self._initialize_default_grid()
         else:
             # Initialize grid data using default method
             logger.warning('Grid file does not exist, initializing default grid data...')
-            self._initialize_default_grid(batch_size=50000)
+            self._initialize_default_grid()
             logger.info('Successfully initialized default grid data')
         logger.info('Grid initialized successfully')
     
-    def terminate(self) -> bool:
-        """Save the grid data to Arrow file
-        Returns:
-            bool: Whether the save was successful
-        """
-        try:
-            if not self._save()['success']:
-                raise Exception('Failed to save grid data')
-        except Exception as e:
-            logger.error(f'Error saving grid data: {str(e)}')
-            return False
-
-    def _save(self) -> dict[str, str | bool]: 
-        
+    def _save(self) -> dict[str, str | bool]:
         save_path = self.grid_file_path
         if not save_path:
             return {"success": False, "message": "No file path provided for saving grid data"}
@@ -132,7 +117,7 @@ class Grid(IGrid):
                     chunk = self.grids.iloc[chunk_start:chunk_end]
                     
                     # Reset index for just this chunk
-                    chunk_reset = chunk.reset_index()
+                    chunk_reset = chunk.reset_index(drop=False)
                     
                     # Convert to Arrow table and write
                     table_chunk = pa.Table.from_pandas(chunk_reset, schema=GRID_SCHEMA)
@@ -146,7 +131,19 @@ class Grid(IGrid):
         except Exception as e:
             return {"success": False, "message": f'Failed to save grid data: {str(e)}'}
         
-    def _load_grid_from_file(self, batch_size: int = 50000):
+    def terminate(self) -> bool:
+        """Save the grid data to Arrow file
+        Returns:
+            bool: Whether the save was successful
+        """
+        try:
+            if not self._save()['success']:
+                raise Exception('Failed to save grid data')
+        except Exception as e:
+            logger.error(f'Error saving grid data: {str(e)}')
+            return False
+
+    def _load_grid_from_file(self, batch_size: int = 100000):
         """Load grid data from file streaming
 
         Args:
@@ -173,7 +170,7 @@ class Grid(IGrid):
                             current_rows_in_buffer = 0
                             
                             partial_df = partial_table.to_pandas(use_threads=True, split_blocks=True, self_destruct=True)
-                            partial_df.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
+                            partial_df.set_index(ATTR_INDEX_KEY, inplace=True)
                             all_dfs.append(partial_df)
                             logger.debug(f'Append DataFrame chunk. Number of chunks: {len(all_dfs)}')
                             
@@ -187,26 +184,26 @@ class Grid(IGrid):
             logger.error(f'Error loading grid data from file: {str(e)}')
             raise e
 
-    def _initialize_default_grid(self, batch_size: int = 10000):
+    def _initialize_default_grid(self):
         """Initialize grid data (ONLY Level 1) as pandas DataFrame"""
         level = 1
         total_width = self.level_info[level]['width']
         total_height = self.level_info[level]['height']
         num_grids = total_width * total_height
         
+        levels = np.full(num_grids, level, dtype=np.uint8)
         global_ids = np.arange(num_grids, dtype=np.uint32)
+        encoded_indices = _encode_index_batch(levels, global_ids)
+        
         grid_data = {
             ATTR_ACTIVATE: np.full(num_grids, True),
             ATTR_DELETED: np.full(num_grids, False, dtype=np.bool_),
-            ATTR_TYPE: np.zeros(num_grids, dtype=np.uint8),
-            ATTR_LEVEL: np.full(num_grids, level, dtype=np.uint8),
-            ATTR_GLOBAL_ID: global_ids,
-            ATTR_ELEVATION: np.full(num_grids, -9999.0, dtype=np.float64)
+            ATTR_INDEX_KEY: encoded_indices
         }
-        
+
         df = pd.DataFrame(grid_data)
-        df.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
-        
+        df.set_index([ATTR_INDEX_KEY], inplace=True)
+
         self.grids = df
         print(f'Successfully initialized grid data with {num_grids} grids at level 1')
    
@@ -270,32 +267,6 @@ class Grid(IGrid):
         max_ys = bbox[1] + (bbox[3] - bbox[1]) * (global_ys + 1) / height
         return (min_xs, min_ys, max_xs, max_ys)
 
-    def _get_grid_info(self, level: int, global_id: int) -> pd.DataFrame:
-        key = f'{level}-{global_id}'
-        buffer = self._redis_client.get(key)
-        if buffer is None:
-            return pd.DataFrame(columns=[ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_LOCAL_ID, ATTR_TYPE, 
-                                       ATTR_ELEVATION, ATTR_DELETED, ATTR_ACTIVATE, 
-                                       ATTR_MIN_X, ATTR_MIN_Y, ATTR_MAX_X, ATTR_MAX_Y])
-        
-        reader = ipc.open_stream(buffer)
-        grid_record = reader.read_next_batch()
-        table = pa.Table.from_batches([grid_record], schema=GRID_SCHEMA)
-        df = table.to_pandas(use_threads=True)
-        
-        # Calculate computed attributes
-        local_id = self._get_local_ids(level, np.array([global_id]))[0]
-        min_x, min_y, max_x, max_y = self._get_coordinates(level, np.array([global_id]))
-        df[ATTR_LOCAL_ID] = local_id
-        df[ATTR_MIN_X] = min_x
-        df[ATTR_MIN_Y] = min_y
-        df[ATTR_MAX_X] = max_x
-        df[ATTR_MAX_Y] = max_y
-        
-        column_order = [ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_LOCAL_ID, ATTR_TYPE, ATTR_ELEVATION, 
-                        ATTR_DELETED, ATTR_ACTIVATE, ATTR_MIN_X, ATTR_MIN_Y, ATTR_MAX_X, ATTR_MAX_Y]
-        return df[column_order]
-    
     def _get_grid_children_global_ids(self, level: int, global_id: int) -> list[int] | None:
         if (level < 0) or (level >= len(self.level_info)):
             return None
@@ -371,34 +342,34 @@ class Grid(IGrid):
         if filtered_grids.empty:
             return []
         
-        # Reset index to have level and global_id as columns
-        filtered_grids = filtered_grids.reset_index()
+        global_ids_np = filtered_grids[ATTR_GLOBAL_ID].to_numpy()
+        local_ids = self._get_local_ids(level, global_ids_np)
+        min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, global_ids_np)
         
-        global_ids = filtered_grids[ATTR_GLOBAL_ID].to_numpy()
-        local_ids = self._get_local_ids(level, global_ids)
-        min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, global_ids)
-        
+        filtered_grids = filtered_grids.copy()
         filtered_grids[ATTR_LOCAL_ID] = local_ids
         filtered_grids[ATTR_MIN_X] = min_xs
         filtered_grids[ATTR_MIN_Y] = min_ys
         filtered_grids[ATTR_MAX_X] = max_xs
         filtered_grids[ATTR_MAX_Y] = max_ys
         
+        levels, global_ids = _decode_index_batch(filtered_grids.index.values)
+        
         return [
             GridAttribute(
                 deleted=row[ATTR_DELETED],
                 activate=row[ATTR_ACTIVATE],
-                type=row[ATTR_TYPE],
-                level=row[ATTR_LEVEL],
-                global_id=row[ATTR_GLOBAL_ID],
+                type=0,
+                level=levels[i],
+                global_id=global_ids[i],
                 local_id=row[ATTR_LOCAL_ID],
-                elevation=row[ATTR_ELEVATION],
+                elevation=-9999.9,
                 min_x=row[ATTR_MIN_X],
                 min_y=row[ATTR_MIN_Y],
                 max_x=row[ATTR_MAX_X],
                 max_y=row[ATTR_MAX_Y]
             )
-            for _, row in filtered_grids.iterrows()
+            for i, (_, row) in enumerate(filtered_grids.iterrows())
         ]
     
     def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
@@ -417,10 +388,9 @@ class Grid(IGrid):
             return [], []
         
         # Get all parents
-        existing_parents = []
-        parent_idx_keys = list(zip(levels, global_ids))
-        parent_idx = pd.MultiIndex.from_tuples(parent_idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
-        existing_parents.extend(parent_idx.intersection(self.grids.index))
+        parent_indices = _encode_index_batch(np.array(levels, dtype=np.uint8), np.array(global_ids, dtype=np.uint32))
+        existing_parents = [idx for idx in parent_indices if idx in self.grids.index]
+        
         if not existing_parents:
             return [], []
         
@@ -432,21 +402,22 @@ class Grid(IGrid):
 
         # Collect all child grid information
         total_children_count = 0
-        for level, _ in valid_parents.index:
+        for encoded_idx in valid_parents.index:
+            level, _ = _decode_index(encoded_idx)
             rule = self.subdivide_rules[level]
             total_children_count += rule[0] * rule[1]
         
         # Pre-allocate arrays for all child data
         all_child_levels = np.empty(total_children_count, dtype=np.uint8)
         all_child_global_ids = np.empty(total_children_count, dtype=np.uint32)
+        all_child_indices = np.empty(total_children_count, dtype=np.uint64)
         all_deleted = np.full(total_children_count, False, dtype=np.bool_)
         all_activate = np.full(total_children_count, True, dtype=np.bool_)
-        all_type = np.zeros(total_children_count, dtype=np.uint8)
-        all_elevation = np.full(total_children_count, -9999.0, dtype=np.float64)
         
         # Process each parent grid
         child_index = 0
-        for (level, global_id) in valid_parents.index:
+        for encoded_idx in valid_parents.index:
+            level, global_id = _decode_index(encoded_idx)
             child_global_ids = self._get_grid_children_global_ids(level, global_id)
             if not child_global_ids:
                 continue
@@ -454,8 +425,14 @@ class Grid(IGrid):
             child_level = level + 1
             child_count = len(child_global_ids)
             end_index = child_index + child_count
+            
             all_child_levels[child_index:end_index] = child_level
             all_child_global_ids[child_index:end_index] = child_global_ids
+            child_encoded_indices = _encode_index_batch(
+                np.full(child_count, child_level, dtype=np.uint8),
+                np.array(child_global_ids, dtype=np.uint32)
+            )
+            all_child_indices[child_index:end_index] = child_encoded_indices
             
             # Update the current position
             child_index = end_index
@@ -468,36 +445,29 @@ class Grid(IGrid):
         if child_index < total_children_count:
             all_child_levels = all_child_levels[:child_index]
             all_child_global_ids = all_child_global_ids[:child_index]
+            all_child_indices = all_child_indices[:child_index]
             all_deleted = all_deleted[:child_index]
             all_activate = all_activate[:child_index]
-            all_type = all_type[:child_index]
-            all_elevation = all_elevation[:child_index]
-        
         
         # Create data for DataFrame construction
         child_data = {
-            ATTR_LEVEL: all_child_levels,
-            ATTR_GLOBAL_ID: all_child_global_ids,
             ATTR_DELETED: all_deleted,
             ATTR_ACTIVATE: all_activate,
-            ATTR_TYPE: all_type,
-            ATTR_ELEVATION: all_elevation
+            ATTR_INDEX_KEY: all_child_indices
         }
         
         # Make child DataFrame
         children = pd.DataFrame(child_data, columns=[
-            ATTR_DELETED, ATTR_ACTIVATE, ATTR_TYPE, 
-            ATTR_LEVEL, ATTR_GLOBAL_ID, ATTR_ELEVATION
+            ATTR_DELETED, ATTR_ACTIVATE, ATTR_INDEX_KEY
         ])
-        children.set_index([ATTR_LEVEL, ATTR_GLOBAL_ID], inplace=True)
-        
+        children.set_index(ATTR_INDEX_KEY, inplace=True)
+
         # Update existing children and add new ones
-        child_idx = children.index
-        existing_mask = child_idx.isin(self.grids.index)
+        existing_mask = children.index.isin(self.grids.index)
         
         if existing_mask.any():
             # Update existing children attributes
-            existing_indices = child_idx[existing_mask]
+            existing_indices = children.index[existing_mask]
             self.grids.loc[existing_indices, ATTR_ACTIVATE] = True
             self.grids.loc[existing_indices, ATTR_DELETED] = False
             
@@ -521,9 +491,9 @@ class Grid(IGrid):
             levels (list[int]): levels of grids to delete
             global_ids (list[int]): global_ids of grids to delete
         """
-        idx_keys = list(zip(levels, global_ids))
-        idx = pd.MultiIndex.from_tuples(idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
-        existing_grids = idx.intersection(self.grids.index)
+        encoded_indices = _encode_index_batch(np.array(levels, dtype=np.uint8), np.array(global_ids, dtype=np.uint32))
+        existing_grids = [idx for idx in encoded_indices if idx in self.grids.index]
+        
         if len(existing_grids) == 0:
             return
         
@@ -544,7 +514,8 @@ class Grid(IGrid):
             tuple[list[int], list[int]]: active grids' global ids and levels
         """
         active_grids = self.grids[self.grids[ATTR_ACTIVATE] == True]
-        return active_grids.index.get_level_values(0).tolist(), active_grids.index.get_level_values(1).tolist()
+        levels, global_ids = _decode_index_batch(active_grids.index.values)
+        return levels.tolist(), global_ids.tolist()
     
     def get_deleted_grid_infos(self) -> tuple[list[int], list[int]]:
         """Method to get all deleted grids' global ids and levels
@@ -553,7 +524,8 @@ class Grid(IGrid):
             tuple[list[int], list[int]]: deleted grids' global ids and levels
         """
         deleted_grids = self.grids[self.grids[ATTR_DELETED] == True]
-        return deleted_grids.index.get_level_values(0).tolist(), deleted_grids.index.get_level_values(1).tolist()
+        levels, global_ids = _decode_index_batch(deleted_grids.index.values)
+        return levels.tolist(), global_ids.tolist()
     
     def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
         """Method to get center coordinates of a grid
@@ -677,11 +649,11 @@ class Grid(IGrid):
             expected_children_count = sub_width * sub_height
             
             if count == expected_children_count:
-                idx_key = (parent_level, parent_global_id)
-                if idx_key in self.grids.index:
-                    parent_indices_to_activate.append(idx_key)
-                    activated_parents.append(idx_key)
-        
+                encoded_idx = _encode_index(parent_level, parent_global_id)
+                if encoded_idx in self.grids.index:
+                    parent_indices_to_activate.append(encoded_idx)
+                    activated_parents.append((parent_level, parent_global_id))
+
         if not activated_parents:
             return [], []
         
@@ -696,9 +668,9 @@ class Grid(IGrid):
             theoretical_child_global_ids = self._get_grid_children_global_ids(parent_level, parent_global_id)
             if theoretical_child_global_ids:
                 for child_global_id in theoretical_child_global_ids:
-                    idx_key = (child_level_of_activated_parent, child_global_id)
-                    if idx_key in self.grids.index:
-                        children_indices_to_deactivate.append(idx_key)
+                    encoded_idx = _encode_index(child_level_of_activated_parent, child_global_id)
+                    if encoded_idx in self.grids.index:
+                        children_indices_to_deactivate.append(encoded_idx)
         
         # Batch deactivate child grids
         if children_indices_to_deactivate:
@@ -720,9 +692,8 @@ class Grid(IGrid):
             return
         
         # Get all indices to recover
-        idx_keys = list(zip(levels, global_ids))
-        idx = pd.MultiIndex.from_tuples(idx_keys, names=[ATTR_LEVEL, ATTR_GLOBAL_ID])
-        existing_grids = idx.intersection(self.grids.index)
+        encoded_indices = _encode_index_batch(np.array(levels, dtype=np.uint8), np.array(global_ids, dtype=np.uint32))
+        existing_grids = [idx for idx in encoded_indices if idx in self.grids.index]
         
         if len(existing_grids) == 0:
             return
@@ -748,4 +719,25 @@ class Grid(IGrid):
         return self._save()
 
     # def parseTopology(self):
-        
+
+# Helpers ##################################################
+
+def _encode_index(level: int, global_id: int) -> np.uint64:
+    """Encode level and global_id into a single index key"""
+    return np.uint64(level) << 32 | np.uint64(global_id)
+
+def _decode_index(encoded: np.uint64) -> tuple[int, int]:
+    """Decode the index key into level and global_id"""
+    level = int(encoded >> 32)
+    global_id = int(encoded & 0xFFFFFFFF)
+    return level, global_id
+
+def _encode_index_batch(levels: np.ndarray, global_ids: np.ndarray) -> np.ndarray:
+    """Encode multiple levels and global_ids into a single index key array"""
+    return (levels.astype(np.uint64) << 32) | global_ids.astype(np.uint64)
+
+def _decode_index_batch(encoded: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Decode a batch of index keys into levels and global_ids"""
+    levels = (encoded >> 32).astype(np.uint8)
+    global_ids = (encoded & 0xFFFFFFFF).astype(np.uint32)
+    return levels, global_ids

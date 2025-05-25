@@ -5,7 +5,7 @@ from pathlib import Path
 from osgeo import ogr, osr
 import multiprocessing as mp
 from functools import partial
-from fastapi import APIRouter, Response, HTTPException
+from fastapi import APIRouter, Response, HTTPException, Body
 
 from icrms.igrid import IGrid, GridSchema
 from ....schemas import grid, base
@@ -65,7 +65,8 @@ def deleted_grid_infos():
         )
 
 @router.post('/subdivide', response_class=Response, response_description='Returns subdivided grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
-def subdivide_grids(grid_info: grid.MultiGridInfo):
+def subdivide_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
+    grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.subdivide_grids(grid_info.levels, grid_info.global_ids)
         subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
@@ -75,10 +76,11 @@ def subdivide_grids(grid_info: grid.MultiGridInfo):
         )
 
 @router.post('/merge', response_class=Response, response_description='Returns merged grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
-def merge_grids(grid_info: grid.MultiGridInfo):
+def merge_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
     """
     Merge grids based on the provided grid information
     """
+    grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
         levels, global_ids = grid_interface.merge_multi_grids(grid_info.levels, grid_info.global_ids)
         merge_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
@@ -88,11 +90,12 @@ def merge_grids(grid_info: grid.MultiGridInfo):
         )
         
 @router.post('/delete', response_model=base.BaseResponse)
-def delete_grids(grid_info: grid.MultiGridInfo):
+def delete_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
     """
     Delete grids based on the provided grid information
     """
     try:
+        grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
         with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
             grid_interface.delete_grids(grid_info.levels, grid_info.global_ids)
             
@@ -104,11 +107,12 @@ def delete_grids(grid_info: grid.MultiGridInfo):
         raise HTTPException(status_code=500, detail=f'Failed to delete grids: {str(e)}')
 
 @router.post('/recover', response_model=base.BaseResponse)
-def recover_grids(grid_info: grid.MultiGridInfo):
+def recover_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
     """
     Recover grids based on the provided grid information
     """
     try:
+        grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
         with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
             grid_interface.recover_multi_grids(grid_info.levels, grid_info.global_ids)
 
