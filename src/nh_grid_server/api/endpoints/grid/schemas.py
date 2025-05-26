@@ -23,7 +23,7 @@ def get_schemas(startIndex: int = 0, endIndex: int = None):
     The order of schemas is based on the starred status and then alphabetically by name.
     """
     try:
-        schema_files = list(Path(settings.SCHEMA_DIR).glob('*.json'))
+        schema_files = list(Path(settings.GRID_SCHEMA_DIR).glob('*.json'))
         
         if startIndex < 0:
             startIndex = 0
@@ -54,7 +54,7 @@ def get_schema_num():
     Get the number of project schemas.
     """
     
-    schema_files = list(Path(settings.SCHEMA_DIR).glob('*.json'))
+    schema_files = list(Path(settings.GRID_SCHEMA_DIR).glob('*.json'))
     num = len(schema_files)
     
     return NumberResponse(

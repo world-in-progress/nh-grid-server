@@ -1,12 +1,11 @@
 from pathlib import Path
 from pydantic import BaseModel, field_validator
-from ..core.config import settings
 
-class SubprojectMeta(BaseModel):
-    """Information about the subproject of a specific project"""
+class PatchMeta(BaseModel):
+    """Information about the patch of a specific project"""
     name: str
-    starred: bool # whether the subproject is starred
-    description: str # description of the subproject
+    starred: bool # whether the patch is starred
+    description: str # description of the patch
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ] 
     
     @field_validator('bounds')
@@ -35,17 +34,17 @@ class ResponseWithProjectMeta(BaseModel):
             raise ValueError('project_meta must be an instance of ProjectMeta')
         return v
     
-class ResponseWithSubprojectMetas(BaseModel):
-    """Response meta information for subprojects"""
-    subproject_metas: list[SubprojectMeta] | None
+class ResponseWithPatchMetas(BaseModel):
+    """Response meta information for patchs"""
+    patch_metas: list[PatchMeta] | None
 
-    @field_validator('subproject_metas')
-    def validate_subproject_metas(cls, v):
+    @field_validator('patch_metas')
+    def validate_patch_metas(cls, v):
         if v is None:
             return v
-        # Ensure that the subproject_metas are instances of SubprojectMeta
-        if not all(isinstance(info, SubprojectMeta) for info in v):
-            raise ValueError('subproject_metas must be a list of SubprojectMeta instances')
+        # Ensure that the patch_metas are instances of PatchMeta
+        if not all(isinstance(info, PatchMeta) for info in v):
+            raise ValueError('patch_metas must be a list of PatchMeta instances')
         return v
 
 class ResponseWithProjectMetas(BaseModel):

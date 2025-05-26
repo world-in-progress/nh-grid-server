@@ -6,28 +6,40 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
 APP_CONTEXT: dict[str, str] = {
     'current_project': None,
-    'current_subproject': None
+    'current_patch': None
 }
 
 class Settings(BaseSettings):
+    # Server configuration
     APP_NAME: str = 'NH Grid Server'
     DEBUG: bool = True
-    TCP_ADDRESS: str = 'tcp://localhost:5555'
-    GRID_TEMP: str = 'False'
-    GRID_FILE_NAME: str = 'grids.arrow'
-    SCHEMA_FILE: str = 'resource/grid/schema.json'
-    SCHEMA_DIR: str = 'resource/grid/schemas/'
-    PROJECT_DIR: str = 'resource/grid/projects/'
-    CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
-    GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'
-    GRID_SUBPROJECT_META_FILE_NAME: str = 'grid.meta.json'
     TEMPLATES_DIR: str = str(ROOT_DIR / 'templates/')
-    MCP_SERVER_SCRIPT_PATH: str = str(ROOT_DIR / 'scripts/grid_mcp_server.py')
     
-    ANTHROPIC_API_KEY: str
-    DEEPSEEK_API_KEY: str
+    # Proxy configuration
     HTTP_PROXY: str
     HTTPS_PROXY: str
+
+    # Patch CRM configuration
+    TCP_ADDRESS: str = 'tcp://localhost:5555'
+    CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
+    
+    # Grid schema related constants
+    GRID_SCHEMA_DIR: str = 'resource/grid/schemas/'
+    GRID_SCHEMA_FILE: str = 'resource/grid/schema.json'
+    
+    # Grid project related constants
+    GRID_PROJECT_DIR: str = 'resource/grid/projects/'
+    GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'
+    
+    # Grid-related constants
+    GRID_PATCH_TEMP: str = 'False'
+    GRID_PATCH_META_FILE_NAME: str = 'patch.meta.json'
+    GRID_PATCH_TOPOLOGY_FILE_NAME: str = 'patch.topo.arrow'
+    
+    # AI MCP configuration
+    DEEPSEEK_API_KEY: str
+    ANTHROPIC_API_KEY: str
+    MCP_SERVER_SCRIPT_PATH: str = str(ROOT_DIR / 'scripts/grid_mcp_server.py')
 
     # CORS
     CORS_ORIGINS: list[str] = ['*']

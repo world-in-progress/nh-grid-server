@@ -24,9 +24,9 @@ def gridman_ui(request: Request):
     status = get_server_status()
     grid_data = None
     
-    if status == 'running' and Path(settings.SCHEMA_FILE).exists():
+    if status == 'running' and Path(settings.GRID_SCHEMA_FILE).exists():
         try:
-            with open(settings.SCHEMA_FILE, 'r') as f:
+            with open(settings.GRID_SCHEMA_FILE, 'r') as f:
                 grid_data = json.load(f)
         except Exception:
             grid_data = None

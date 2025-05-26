@@ -20,7 +20,7 @@ def get_schema(name: str):
     """
     
     # Check if the schema file exists
-    project_schema_path = Path(settings.SCHEMA_DIR, f'{name}.json')
+    project_schema_path = Path(settings.GRID_SCHEMA_DIR, f'{name}.json')
     if not project_schema_path.exists():
         raise HTTPException(status_code=404, detail='Project schema not found')
     
@@ -44,7 +44,7 @@ def register_schema(data: ProjectSchema):
     """
     
     # Find if project schema is existed
-    project_schema_path = Path(settings.SCHEMA_DIR, f'{data.name}.json')
+    project_schema_path = Path(settings.GRID_SCHEMA_DIR, f'{data.name}.json')
     if project_schema_path.exists():
         return BaseResponse(
             success=False,
@@ -71,7 +71,7 @@ def update_schema(name: str, data: ProjectSchema):
     """
     
     # Check if the schema file exists
-    project_schema_path = Path(settings.SCHEMA_DIR, f'{name}.json')
+    project_schema_path = Path(settings.GRID_SCHEMA_DIR, f'{name}.json')
     if not project_schema_path.exists():
         raise HTTPException(status_code=404, detail='Project schema not found')
     
@@ -96,13 +96,13 @@ def delete_schema(name: str):
     """
     
     # Check if the schema file exists
-    project_schema_path = Path(settings.SCHEMA_DIR, f'{name}.json')
+    project_schema_path = Path(settings.GRID_SCHEMA_DIR, f'{name}.json')
     if not project_schema_path.exists():
         raise HTTPException(status_code=404, detail='Project schema not found')
     
     # Check if no project depends on this schema
     dependency_found = False
-    project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))
+    project_dirs = list(Path(settings.GRID_PROJECT_DIR).glob('*'))
     for project_dir in project_dirs:
         meta_file_path = Path(project_dir, settings.GRID_PROJECT_META_FILE_NAME)
         if not meta_file_path.exists():

@@ -23,7 +23,7 @@ def get_project_metas(startIndex: int = 0, endIndex: int = None):
     The order of project meta information is based on the starred status and then alphabetically by name.
     """
     
-    project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))
+    project_dirs = list(Path(settings.GRID_PROJECT_DIR).glob('*'))
     project_meta_files = [ project_dir / settings.GRID_PROJECT_META_FILE_NAME for project_dir in project_dirs if project_dir.is_dir() ]
 
     if startIndex < 0:
@@ -54,7 +54,7 @@ def get_project_meta_num():
     Retrieve the number of grid projects.
     """
     
-    project_dirs = list(Path(settings.PROJECT_DIR).glob('*'))
+    project_dirs = list(Path(settings.GRID_PROJECT_DIR).glob('*'))
     num = len(project_dirs)
     return base.NumberResponse(
         number=num

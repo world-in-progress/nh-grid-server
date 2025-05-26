@@ -19,7 +19,7 @@ def get_project_meta(name: str):
     """
     
     # Check if the project file exists
-    project_path = Path(settings.PROJECT_DIR, f'{name}')
+    project_path = Path(settings.GRID_PROJECT_DIR, f'{name}')
     if not project_path.exists():
         raise HTTPException(status_code=404, detail='Grid project not found')
     
@@ -44,7 +44,7 @@ def create_project(data: project.ProjectMeta):
     """
     
     # Find if project already exists
-    project_dir = Path(settings.PROJECT_DIR, f'{data.name}')
+    project_dir = Path(settings.GRID_PROJECT_DIR, f'{data.name}')
     if project_dir.exists():
         return base.BaseResponse(
             success=False,
@@ -76,7 +76,7 @@ def update_project_info(name: str, data: project.ProjectMeta):
     """
     
     # Check if the project file exists
-    project_path = Path(settings.PROJECT_DIR, f'{name}')
+    project_path = Path(settings.GRID_PROJECT_DIR, f'{name}')
     if not project_path.exists():
         raise HTTPException(status_code=404, detail='Grid project not found')
     
@@ -102,7 +102,7 @@ def delete_project(name: str):
     """
     
     # Check if the project directory exists
-    project_path = Path(settings.PROJECT_DIR, f'{name}')
+    project_path = Path(settings.GRID_PROJECT_DIR, f'{name}')
     if not project_path.exists():
         raise HTTPException(status_code=404, detail='Grid project not found')
     

@@ -18,25 +18,25 @@ router = APIRouter(prefix='/operation', tags=['grid / operation'])
 @router.get('/meta', response_model=grid.GridMeta)
 def get_current_grid_meta():
     """
-    Get grid meta information of the current subproject
+    Get grid meta information of the current patch
     """
     try:
         return grid.GridMeta.from_context()
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
-@router.get('/meta/{project_name}/{subproject_name}', response_model=grid.GridMeta)
-def get_grid_meta(project_name: str, subproject_name: str):
+@router.get('/meta/{project_name}/{patch_name}', response_model=grid.GridMeta)
+def get_grid_meta(project_name: str, patch_name: str):
     """
-    Get grid meta information for a specific subproject
+    Get grid meta information for a specific patch
     """
     try:
-        project_dir = Path(settings.PROJECT_DIR, project_name)
-        subproject_dir = project_dir / subproject_name
-        if not project_dir.exists() or not subproject_dir.exists():
-            raise HTTPException(status_code=404, detail='Project or subproject not found')
+        project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
+        patch_dir = project_dir / patch_name
+        if not project_dir.exists() or not patch_dir.exists():
+            raise HTTPException(status_code=404, detail='Project or patch not found')
 
-        return grid.GridMeta.from_subproject(project_name, subproject_name)
+        return grid.GridMeta.from_patch(project_name, patch_name)
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 

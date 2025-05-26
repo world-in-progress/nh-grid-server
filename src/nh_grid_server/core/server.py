@@ -15,22 +15,22 @@ def init_working_directory():
 
     os.makedirs(grid_dir, exist_ok=True)
     os.makedirs(resource_dir, exist_ok=True)
-    os.makedirs(settings.SCHEMA_DIR, exist_ok=True)
-    os.makedirs(settings.PROJECT_DIR, exist_ok=True)
+    os.makedirs(settings.GRID_SCHEMA_DIR, exist_ok=True)
+    os.makedirs(settings.GRID_PROJECT_DIR, exist_ok=True)
 
-def set_current_project(project_meta: ProjectMeta, subproject_name: str) -> bool:
+def set_current_project(project_meta: ProjectMeta, patch_name: str) -> bool:
     
     # Check if current project is the same as the new one
     # If not, shut down current crm server
-    if APP_CONTEXT['current_project'] == project_meta.name and APP_CONTEXT['current_subproject'] == subproject_name:
+    if APP_CONTEXT['current_project'] == project_meta.name and APP_CONTEXT['current_patch'] == patch_name:
         return
     else:
         APP_CONTEXT['current_project'] = project_meta.name
-        APP_CONTEXT['current_subproject'] = subproject_name
+        APP_CONTEXT['current_patch'] = patch_name
         close_current_project()
 
     # Check if schema is valid
-    schema_file_path = Path(settings.SCHEMA_DIR) / f'{project_meta.schema_name}.json'
+    schema_file_path = Path(settings.GRID_SCHEMA_DIR) / f'{project_meta.schema_name}.json'
     if not schema_file_path.exists():
         raise FileNotFoundError(f'Schema file {schema_file_path} does not exist')
     
@@ -46,15 +46,15 @@ def set_current_project(project_meta: ProjectMeta, subproject_name: str) -> bool
         # Windows-specific: don't open a new console window
         kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
     
-    project_path = Path(settings.PROJECT_DIR, project_meta.name)
+    project_path = Path(settings.GRID_PROJECT_DIR, project_meta.name)
     server_process = subprocess.Popen(
         [
             sys.executable, settings.CRM_LAUNCHER_FILE,
-            '--temp', settings.GRID_TEMP,
+            '--temp', settings.GRID_PATCH_TEMP,
             '--tcp_address', settings.TCP_ADDRESS,
             '--schema_file_path', schema_file_path,
-            '--grid_project_path', str(project_path / subproject_name),
-            '--meta_file_name', settings.GRID_SUBPROJECT_META_FILE_NAME,
+            '--grid_project_path', str(project_path / patch_name),
+            '--meta_file_name', settings.GRID_PATCH_META_FILE_NAME,
         ],
         **kwargs
     )

@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 from .base import BaseResponse
 from .schema import ProjectSchema
 from ..core.config import settings, APP_CONTEXT
-from .project import ProjectMeta, SubprojectMeta
+from .project import ProjectMeta, PatchMeta
 
 class GridMeta(BaseModel):
     """Meta information for a specific grid resource"""
@@ -16,28 +16,28 @@ class GridMeta(BaseModel):
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
     
     @staticmethod
-    def from_subproject(project_name: str, subproject_name: str):
-        """Create a GridMeta instance from a subproject"""
+    def from_patch(project_name: str, patch_name: str):
+        """Create a GridMeta instance from a patch"""
         
-        project_dir = Path(settings.PROJECT_DIR, project_name)
-        subproject_dir = project_dir / subproject_name
+        project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
+        patch_dir = project_dir / patch_name
         project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
-        subproject_meta_file = subproject_dir / settings.GRID_SUBPROJECT_META_FILE_NAME
-        
+        patch_meta_file = patch_dir / settings.GRID_PATCH_META_FILE_NAME
+
         try:
-            # Get bounds from subproject meta file
-            with open(subproject_meta_file, 'r') as f:
-                subproject_data = json.load(f)
-            subproject_meta = SubprojectMeta(**subproject_data)
-            bounds = subproject_meta.bounds
-            
+            # Get bounds from patch meta file
+            with open(patch_meta_file, 'r') as f:
+                patch_data = json.load(f)
+            patch_meta = PatchMeta(**patch_data)
+            bounds = patch_meta.bounds
+
             # Get grid info from project meta file
             with open(project_meta_file, 'r') as f:
                 project_data = json.load(f)
             project_meta = ProjectMeta(**project_data)
             
             schema_name = project_meta.schema_name
-            schema_file = Path(settings.SCHEMA_DIR, f'{schema_name}.json')
+            schema_file = Path(settings.GRID_SCHEMA_DIR, f'{schema_name}.json')
             
             with open(schema_file, 'r') as f:
                 schema_data = json.load(f)
@@ -65,7 +65,7 @@ class GridMeta(BaseModel):
             subdivide_rules.append([1, 1])
             
             return GridMeta(
-                name=subproject_name,
+                name=patch_name,
                 epsg=epsg,
                 subdivide_rules=subdivide_rules,
                 bounds=bounds
@@ -76,16 +76,12 @@ class GridMeta(BaseModel):
     
     @staticmethod
     def from_context():
-        """Create a GridMeta instance from a subproject"""
+        """Create a GridMeta instance from a patch"""
 
         project_name = APP_CONTEXT['current_project']
-        subproject_name = APP_CONTEXT['current_subproject']
-        return GridMeta.from_subproject(project_name, subproject_name)
+        patch_name = APP_CONTEXT['current_patch']
+        return GridMeta.from_patch(project_name, patch_name)
     
-    # TODO: BoundingBox for recoverable grid
-# class BoundingBox(BaseModel):
-    
-
 class MultiGridInfo(BaseModel):
     levels: list[int]
     global_ids: list[int]
