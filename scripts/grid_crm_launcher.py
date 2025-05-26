@@ -64,7 +64,7 @@ if __name__ == '__main__':
     if temp == 'True':
         grid_file_path = ''
     else:
-        grid_file_path = Path(grid_project_path, 'grids.arrow')
+        grid_file_path = Path(grid_project_path, 'patch.topo.arrow')
     
     # Init CRM
     crm = Grid(
