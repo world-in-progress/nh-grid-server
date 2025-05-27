@@ -6,13 +6,13 @@ from fastapi import APIRouter, HTTPException
 from ....core.config import settings
 from ....schemas.base import BaseResponse
 from ....core.server import set_current_project
-from ....schemas.project import ProjectMeta, ProjectStatus, PatchMeta
+from ....schemas.project import ProjectMeta, PatchStatus, PatchMeta
 
 # APIs for grid patch ################################################
 
 router = APIRouter(prefix='/patch', tags=['grid / patch'])
 
-@router.get('/', response_model=ProjectStatus)
+@router.get('/', response_model=PatchStatus)
 def check_patch_ready():
     """
     Description
@@ -25,7 +25,7 @@ def check_patch_ready():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to check CRM of the patch: {str(e)}')
 
-    return ProjectStatus(
+    return PatchStatus(
         status='ACTIVATED' if flag else 'DEACTIVATED',
         is_ready=flag
     )
@@ -124,7 +124,7 @@ def update_patch(project_name: str, patch_name: str, data: PatchMeta):
     )
 
 @router.delete('/{project_name}/{patch_name}', response_model=BaseResponse)
-def delete_project(project_name: str, patch_name: str):
+def delete_patch(project_name: str, patch_name: str):
     """
     Description
     --

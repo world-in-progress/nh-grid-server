@@ -9,21 +9,11 @@ from fastapi import APIRouter, Response, HTTPException, Body
 
 from icrms.igrid import IGrid, GridSchema
 from ....schemas import grid, base
-from ....core.config import settings, APP_CONTEXT
+from ....core.config import settings
 
 # APIs for grid operations ################################################
 
 router = APIRouter(prefix='/operation', tags=['grid / operation'])
-
-@router.get('/meta', response_model=grid.GridMeta)
-def get_current_grid_meta():
-    """
-    Get grid meta information of the current patch
-    """
-    try:
-        return grid.GridMeta.from_context()
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
 @router.get('/meta/{project_name}/{patch_name}', response_model=grid.GridMeta)
 def get_grid_meta(project_name: str, patch_name: str):
@@ -40,6 +30,16 @@ def get_grid_meta(project_name: str, patch_name: str):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
+@router.get('/meta', response_model=grid.GridMeta)
+def get_current_grid_meta():
+    """
+    Get grid meta information of the current patch
+    """
+    try:
+        return grid.GridMeta.from_context()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
+    
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():
     with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
