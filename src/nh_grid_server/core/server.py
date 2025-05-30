@@ -5,8 +5,13 @@ import subprocess
 from pathlib import Path
 from .config import settings, APP_CONTEXT
 from ..schemas.project import ProjectMeta
+import logging
 
 server_process: subprocess.Popen | None = None
+feature_process: subprocess.Popen | None = None
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def init_working_directory():
     """Ensure the working directory structure exists for the server"""
@@ -104,3 +109,40 @@ def get_server_status():
             server_process = None
             return 'stopped'
     return 'not_started'
+
+def set_current_feature(project_meta: ProjectMeta, patch_name: str):
+
+    # Check if current project is the same as the new one
+    # If not, shut down current crm server
+    if APP_CONTEXT['current_project'] == project_meta.name and APP_CONTEXT['current_patch'] == patch_name:
+        return
+    else:
+        APP_CONTEXT['current_project'] = project_meta.name
+        APP_CONTEXT['current_patch'] = patch_name
+        close_current_project()
+    
+    # Start crm server process for this project
+    global feature_process
+    
+    # Platform-specific subprocess arguments
+    kwargs = {}
+    if sys.platform != 'win32':
+        # Unix-specific: create new process group
+        kwargs['preexec_fn'] = os.setsid
+    else:
+        # Windows-specific: don't open a new console window
+        kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+    
+    project_path = Path(settings.GRID_PROJECT_DIR, project_meta.name)
+
+    logger.info("starting feature crm")
+
+    feature_process = subprocess.Popen(
+        [
+            sys.executable, settings.FEATURE_LAUNCHER_FILE,
+            '--tcp_address', settings.FEATURE_TCP_ADDRESS,
+            '--feature_path', str(project_path / patch_name / "feature"),
+        ],
+        **kwargs
+    )
+    return feature_process is not None
