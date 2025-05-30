@@ -17,95 +17,71 @@ class Feature(IFeature):
     The Feature Resource.  
     Feature is a feature file that can be uploaded to the resource pool.  
     """
-    def __init__(self, resource_pool_path: str):
+    def __init__(self, feature_path: str):
         """Method to initialize Feature
 
         Args:
-            resource_pool_path (str): path to the resource pool directory
+            feature_path (str): path to the feature file
         """
-        self.resource_pool_path = resource_pool_path
-        os.makedirs(resource_pool_path, exist_ok=True)
-        logger.info(f'Feature initialized with resource pool path: {resource_pool_path}')
+        self.feature_path = feature_path
+        os.makedirs(feature_path, exist_ok=True)
+        logger.info(f'Feature initialized with feature path: {feature_path}')
 
-    def upload_feature(self, file_path: str, file_type: str, patch_name: str) -> UploadInfo:
+    def upload_feature(self, file_path: str, file_type: str) -> dict[str, bool | str]:
         """
         Upload a feature file to the resource pool
         """
+
+        logger.info(f'Uploading feature in crm: {file_path} {file_type}')
+
         if file_type == 'json':
-            return UploadInfo(
-                success=True,
-                file_path=file_path,
-                patch_name=patch_name
-            )
+            return {
+                'success': True,
+                'file_path': file_path,
+            }
         elif file_type == 'shp':
             # TODO: 将shp文件转换为geojson
-            return UploadInfo(
-                success=True,
-                file_path=file_path,
-                patch_name=patch_name
-            )
+            return {
+                'success': True,
+                'file_path': str(self.feature_path / file_path),
+            }
         else:
-            return UploadInfo(
-                success=False,
-                file_path='',
-                patch_name=''
-            )
+            return {
+                'success': False,
+                'file_path': '',
+            }
 
-    def save_vector_feature(self, info: UploadInfo, is_edited: bool) -> SaveInfo:
+    def save_vector_feature(self, file_path: str, feature_json: str, is_edited: bool) -> dict[str, bool | str]:
         """
         Save feature to resource pool
         """
         try:
-            if not info.success:
-                return SaveInfo(
-                    success=False,
-                    message="Upload failed",
-                    resource_path="",
-                    is_edited=False
-                )
-            
+            # 如果文件被编辑，复制到资源池
             if is_edited:
-                # 如果文件被编辑，复制到资源池
-                file_name = os.path.basename(info.file_path)
-                target_path = os.path.join(self.resource_pool_path, info.patch_name, file_name)
-                shutil.copy2(info.file_path, target_path)
+                # 获取文件名
+                file_name = os.path.basename(file_path)
+                # 复制文件到资源池
+                target_path = os.path.join(self.feature_path, file_name)
+                # 将json写入
+                with open(target_path, 'w') as f:
+                    f.write(feature_json)
                 resource_path = target_path
             else:
                 # 如果文件未被编辑，直接使用原路径
-                resource_path = info.file_path
+                resource_path = file_path
             
             # 调用资源树挂载接口
             # TODO: 实现资源树挂载逻辑
             
-            return SaveInfo(
-                success=True,
-                message="Feature saved successfully",
-                resource_path=resource_path
-            )
+            return {
+                'success': True,
+                'message': "Feature saved successfully",
+                'resource_path': resource_path
+            }
         except Exception as e:
             logger.error(f'Failed to save feature: {str(e)}')
-            return SaveInfo(
-                success=False,
-                message=str(e),
-                resource_path=""
-            )
-
-    def get_feature_list_of_patch(self, patch_name: str) -> list[dict[str, Any]]:
-        """
-        Get list of features in the resource pool
-        """
-        try:
-            features = []
-            for root, dirs, files in os.walk(self.resource_pool_path):
-                for file in files:
-                    if file.endswith(('.json', '.shp')):
-                        file_path = os.path.join(root, file)
-                        features.append({
-                            'file_path': file_path,
-                            'file_type': os.path.splitext(file)[1][1:],
-                            'patch_name': os.path.basename(os.path.dirname(file_path))
-                        })
-            return features
-        except Exception as e:
-            logger.error(f'Failed to get feature list: {str(e)}')
-            return []
+            return {
+                'success': False,
+                'message': str(e),
+                'resource_path': ""
+            }

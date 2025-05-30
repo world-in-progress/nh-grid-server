@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Patch CRM configuration
     TCP_ADDRESS: str = 'tcp://localhost:5555'
     CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
+
+    # Feature CRM configuration
+    FEATURE_TCP_ADDRESS: str = 'tcp://localhost:5556'
+    FEATURE_LAUNCHER_FILE: str = 'scripts/feature_crm_launcher.py'
+
+    # Feature related constants
+    FEATURE_RESOURCE_POOL_META_FILE_NAME: str = 'resource_pool.meta.json'
     
     # Grid schema related constants
     GRID_SCHEMA_DIR: str = 'resource/grid/schemas/'

@@ -278,10 +278,7 @@ class SaveInfo:
 
     def deserialize(res_bytes: memoryview) -> dict[str, bool | str]:
         res = json.loads(res_bytes.tobytes().decode('utf-8'))
-        return {
-            'success': res['success'],
-            'message': res['message']
-        }
+        return res
         
 # Define ICRM ###########################################################
 

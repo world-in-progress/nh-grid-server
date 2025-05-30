@@ -6,6 +6,7 @@ from . import projects
 from . import operation
 from . import patch
 from . import patches
+from . import feature
 
 router = APIRouter(prefix='/grid', tags=['grid'])
 
@@ -18,3 +19,5 @@ router.include_router(patch.router)
 router.include_router(patches.router)
 
 router.include_router(operation.router)
+
+router.include_router(feature.router)
