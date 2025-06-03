@@ -7,7 +7,7 @@ import multiprocessing as mp
 from functools import partial
 from fastapi import APIRouter, Response, HTTPException, Body
 
-from icrms.igrid import IGrid, GridSchema
+from icrms.igrid import IGrid, GridSchema, SaveInfo
 from ....schemas import grid, base
 from ....core.config import settings
 
@@ -261,11 +261,11 @@ def save_grids():
     """
     try:
         with cc.compo.runtime.connect_crm(settings.TCP_ADDRESS, IGrid) as grid_interface:
-            result = grid_interface.save()
+            result: SaveInfo = grid_interface.save()
             logging.info(f'Grid saved successfully: {result}')
             return base.BaseResponse(
-                success=result['success'],
-                message=result['message']
+                success=result.success,
+                message=result.message
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save grid: {str(e)}')

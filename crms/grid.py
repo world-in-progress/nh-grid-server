@@ -8,7 +8,7 @@ import pyarrow.ipc as ipc
 import multiprocessing as mp
 from functools import partial
 from collections import Counter
-from icrms.igrid import IGrid, GridSchema, GridAttribute
+from icrms.igrid import IGrid, GridSchema, GridAttribute, SaveInfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,11 +100,11 @@ class Grid(IGrid):
     def _save(self) -> dict[str, str | bool]:
         save_path = self.grid_file_path
         if not save_path:
-            return {"success": False, "message": "No file path provided for saving grid data"}
+            return {'success': False, 'message': 'No file path provided for saving grid data'}
 
         try:
             if self.grids.empty:
-                return {"success": False, "message": "No grid data to save"}
+                return {'success': False, 'message': 'No grid data to save'}
 
             # Create file
             with pa.ipc.new_file(save_path, GRID_SCHEMA) as writer:
@@ -126,11 +126,11 @@ class Grid(IGrid):
                     # Explicitly delete temporary objects to free memory
                     del chunk_reset, table_chunk
 
-            return {"success": True, "message": f"Successfully saved grid data to {save_path}"}
+            return {'success': True, 'message': f"Successfully saved grid data to {save_path}"}
 
         except Exception as e:
-            return {"success": False, "message": f'Failed to save grid data: {str(e)}'}
-        
+            return {'success': False, 'message': f'Failed to save grid data: {str(e)}'}
+
     def terminate(self) -> bool:
         """Save the grid data to Arrow file
         Returns:
@@ -701,14 +701,14 @@ class Grid(IGrid):
         # Activate these grids
         self.grids.loc[existing_grids, ATTR_ACTIVATE] = True
         self.grids.loc[existing_grids, ATTR_DELETED] = False
-    
-    def save(self) -> dict[str, bool | str]:
+
+    def save(self) -> SaveInfo:
         """
         Save the grid data to an Arrow file with optimized memory usage.
         This method writes the grid dataframe to disk using Apache Arrow format.
         It processes the data in batches to minimize memory consumption during saving.
         Returns:
-            dict[str, bool | str]: A dictionary containing:
+            SaveInfo: An object containing:
                 - 'success': Boolean indicating success (True) or failure (False)
                 - 'message': A string with details about the operation result
         Error conditions:
@@ -716,7 +716,13 @@ class Grid(IGrid):
             - Returns failure if the grid dataframe is empty
             - Returns failure with exception details if any error occurs during saving
         """
-        return self._save()
+        save_info_dict = self._save()
+        save_info = SaveInfo(
+            success=save_info_dict.get('success', False),
+            message=save_info_dict.get('message', '')
+        )
+        return save_info
+        
 
     # def parseTopology(self):
 
