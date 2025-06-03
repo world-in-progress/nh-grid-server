@@ -4,7 +4,7 @@ import logging
 import os
 import json
 import shutil
-from typing import Any
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class Feature(IFeature):
         Args:
             feature_path (str): path to the feature file
         """
-        self.feature_path = feature_path
+        self.feature_path = Path(feature_path)
         os.makedirs(feature_path, exist_ok=True)
         logger.info(f'Feature initialized with feature path: {feature_path}')
 
@@ -32,7 +32,7 @@ class Feature(IFeature):
         Upload a feature file to the resource pool
         """
 
-        logger.info(f'Uploading feature in crm: {file_path} {file_type}')
+        logger.info(f'Uploading feature in crm: {file_path}-{file_type}')
 
         if file_type == 'json':
             return {
@@ -41,6 +41,7 @@ class Feature(IFeature):
             }
         elif file_type == 'shp':
             # TODO: 将shp文件转换为geojson
+            logger.info(f'Converting shp file to geojson: {file_path}')
             return {
                 'success': True,
                 'file_path': str(self.feature_path / file_path),

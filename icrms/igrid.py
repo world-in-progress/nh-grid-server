@@ -273,13 +273,23 @@ class FloatArray:
 
 @cc.transferable
 class SaveInfo:
-    def serialize(info: dict[str, bool | str]) -> bytes:
-        return json.dumps(info).encode('utf-8')
+    success: bool
+    message: str
+    
+    def serialize(info: 'SaveInfo') -> bytes:
+        info_dict = {
+            'success': info.success,
+            'message': info.message,
+        }
+        return json.dumps(info_dict).encode('utf-8')
 
-    def deserialize(res_bytes: memoryview) -> dict[str, bool | str]:
+    def deserialize(res_bytes: memoryview) -> 'SaveInfo':
         res = json.loads(res_bytes.tobytes().decode('utf-8'))
-        return res
-        
+        return SaveInfo(
+            success=res.get('success', False),
+            message=res.get('message', ''),
+        )
+
 # Define ICRM ###########################################################
 
 @cc.icrm
@@ -325,5 +335,5 @@ class IGrid:
     def recover_multi_grids(self, levels: list[int], global_ids: list[int]):
         ...
         
-    def save(self) -> dict[str, bool | str]:
+    def save(self) -> SaveInfo:
         ...

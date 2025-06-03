@@ -72,12 +72,17 @@ class SaveResult:
         return json.dumps(info).encode('utf-8')
 
     def deserialize(res_bytes: memoryview) -> dict[str, bool | str]:
+        
+        # logger = cc.logging.getLogger(__name__)
+        # logger.config(level=cc.logging.DEBUG)
+        # logger.debug(f'{res_bytes}, {res_bytes.tobytes()}, {len(res_bytes.tobytes())}')
         res = json.loads(res_bytes.tobytes().decode('utf-8'))
-        return {
-            'success': res['success'],
-            'message': res['message'],
-            'resource_path': res['resource_path']
-        }
+        # return {
+        #     'success': res['success'],
+        #     'message': res['message'],
+        #     'resource_path': res['resource_path']
+        # }
+        return res
 
 # Define ICRM ###########################################################
 @cc.icrm
