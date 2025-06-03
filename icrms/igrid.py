@@ -272,11 +272,11 @@ class FloatArray:
         return data
 
 @cc.transferable
-class SaveInfo:
+class TopoSaveInfo:
     success: bool
     message: str
     
-    def serialize(info: 'SaveInfo') -> bytes:
+    def serialize(info: 'TopoSaveInfo') -> bytes:
         schema = pa.schema([
             pa.field('success', pa.bool_()),
             pa.field('message', pa.string()),
@@ -285,9 +285,9 @@ class SaveInfo:
         table = pa.Table.from_pylist([info.__dict__], schema=schema)
         return cc.message.serialize_from_table(table)
     
-    def deserialize(arrow_bytes: bytes) -> 'SaveInfo':
+    def deserialize(arrow_bytes: bytes) -> 'TopoSaveInfo':
         row = cc.message.deserialize_to_rows(arrow_bytes)[0]
-        return SaveInfo(
+        return TopoSaveInfo(
             success=row['success'],
             message=row['message'],
         )
@@ -337,5 +337,5 @@ class IGrid:
     def recover_multi_grids(self, levels: list[int], global_ids: list[int]):
         ...
         
-    def save(self) -> SaveInfo:
+    def save(self) -> TopoSaveInfo:
         ...

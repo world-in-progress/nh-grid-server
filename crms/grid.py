@@ -8,7 +8,7 @@ import pyarrow.ipc as ipc
 import multiprocessing as mp
 from functools import partial
 from collections import Counter
-from icrms.igrid import IGrid, GridSchema, GridAttribute, SaveInfo
+from icrms.igrid import IGrid, GridSchema, GridAttribute, TopoSaveInfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -702,7 +702,7 @@ class Grid(IGrid):
         self.grids.loc[existing_grids, ATTR_ACTIVATE] = True
         self.grids.loc[existing_grids, ATTR_DELETED] = False
 
-    def save(self) -> SaveInfo:
+    def save(self) -> TopoSaveInfo:
         """
         Save the grid data to an Arrow file with optimized memory usage.
         This method writes the grid dataframe to disk using Apache Arrow format.
@@ -717,7 +717,7 @@ class Grid(IGrid):
             - Returns failure with exception details if any error occurs during saving
         """
         save_info_dict = self._save()
-        save_info = SaveInfo(
+        save_info = TopoSaveInfo(
             success=save_info_dict.get('success', False),
             message=save_info_dict.get('message', '')
         )
