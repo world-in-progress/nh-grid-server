@@ -277,17 +277,19 @@ class SaveInfo:
     message: str
     
     def serialize(info: 'SaveInfo') -> bytes:
-        info_dict = {
-            'success': info.success,
-            'message': info.message,
-        }
-        return json.dumps(info_dict).encode('utf-8')
-
-    def deserialize(res_bytes: memoryview) -> 'SaveInfo':
-        res = json.loads(res_bytes.tobytes().decode('utf-8'))
+        schema = pa.schema([
+            pa.field('success', pa.bool_()),
+            pa.field('message', pa.string()),
+        ])
+        
+        table = pa.Table.from_pylist([info.__dict__], schema=schema)
+        return cc.message.serialize_from_table(table)
+    
+    def deserialize(arrow_bytes: bytes) -> 'SaveInfo':
+        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
         return SaveInfo(
-            success=res.get('success', False),
-            message=res.get('message', ''),
+            success=row['success'],
+            message=row['message'],
         )
 
 # Define ICRM ###########################################################

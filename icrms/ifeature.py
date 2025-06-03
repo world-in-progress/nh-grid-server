@@ -41,7 +41,7 @@ class UploadInfo:
 #         return res
 
 @cc.transferable
-class SaveInfo:
+class FeatureSaveInfo:
     def serialize(file_path: str, feature_json: str, is_edited: bool) -> bytes:
         schema = pa.schema([
             pa.field('file_path', pa.string()),

@@ -1,5 +1,5 @@
 import c_two as cc
-from icrms.ifeature import IFeature, UploadInfo, SaveInfo
+from icrms.ifeature import IFeature, UploadInfo, FeatureSaveInfo
 import logging
 import os
 import json

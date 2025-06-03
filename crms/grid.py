@@ -718,8 +718,8 @@ class Grid(IGrid):
         """
         save_info_dict = self._save()
         save_info = SaveInfo(
-            success=save_info_dict['success'],
-            message=save_info_dict['message']
+            success=save_info_dict.get('success', False),
+            message=save_info_dict.get('message', '')
         )
         return save_info
         
