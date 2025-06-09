@@ -408,7 +408,7 @@ class Treeger(ITreeger):
             logger.error(f'Failed to launch node {node_key}: {e}')
             raise
     
-    def activate_node(self, node_key: str, reusibility: ReuseAction) -> str:
+    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
         return self._start_node_service(node_key, reusibility)
     
     def _stop_node_service(self, node_key: str) -> bool:

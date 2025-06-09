@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 import time
@@ -41,7 +42,7 @@ class ProxyCRM:
                 logger.warning(f'Failed to terminate client: {e}')
 
 class BootStrappingTreeger:
-    instance = None
+    instance: ITreeger | 'BootStrappingTreeger' = None
     _lock = threading.Lock()
     
     def __new__(cls):
@@ -57,21 +58,21 @@ class BootStrappingTreeger:
         if getattr(self, '_initialized', False):
             return
         
-        self.process = None
-        self.meta_path = settings.SCENARIO_META_PATH
-        self.tcp_address = settings.TREEGER_TCP_ADDRESS
+        self._process = None
+        self._meta_path = settings.SCENARIO_META_PATH
+        self._tcp_address = settings.TREEGER_TCP_ADDRESS
         
-        if not self.meta_path or not self.tcp_address:
+        if not self._meta_path or not self._tcp_address:
             raise ValueError('Treeger meta path and TCP address must be set in settings')
 
         try:
-            with open(self.meta_path, 'r') as f:
+            with open(self._meta_path, 'r') as f:
                 meta_data = yaml.safe_load(f)
             
             meta = TreeMeta(**(meta_data['meta']))
             for crm_temp in meta.crm_entries:
                 if crm_temp.name == 'Treeger':
-                    self.crm_launcher = crm_temp.crm_launcher
+                    self._crm_launcher = crm_temp.crm_launcher
                     break
             
             # Initialize the CRM process
@@ -80,7 +81,7 @@ class BootStrappingTreeger:
             self._initialized = True
             
         except Exception as e:
-            logger.error(f'Failed to initialize Treeger from {self.meta_path}: {e}')
+            logger.error(f'Failed to initialize Treeger from {self._meta_path}: {e}')
             self._initialized = False
             raise
         
@@ -94,12 +95,12 @@ class BootStrappingTreeger:
             # Windows-specific: don't open a new console window
             kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
         
-        self.process = subprocess.Popen(
+        self._process = subprocess.Popen(
             [
                 sys.executable,
-                self.crm_launcher,
-                '--meta_path', self.meta_path,
-                '--tcp_address', self.tcp_address,
+                self._crm_launcher,
+                '--meta_path', self._meta_path,
+                '--tcp_address', self._tcp_address,
             ],
             **kwargs
         )
@@ -109,7 +110,7 @@ class BootStrappingTreeger:
         
         logger.info('Waiting for Treeger CRM to start...')
         while True:
-            if cc.message.Client.ping(self.tcp_address, timeout=1) is False:
+            if cc.message.Client.ping(self._tcp_address, timeout=1) is False:
                 if time.time() - start_time > timeout:
                     logger.error(f'Timeout waiting for Treeger CRM to start after {timeout} seconds')
                     raise TimeoutError(f'Treeger CRM failed to start within {timeout} seconds')
@@ -120,59 +121,51 @@ class BootStrappingTreeger:
     
     def terminate(self):
         # Terminate the CRM process
-        if self.process is None:
+        if self._process is None:
             return
             
         if sys.platform != 'win32':
             # Unix-specific: terminate the process group
             try:
-                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
+                os.killpg(os.getpgid(self._process.pid), signal.SIGINT)
             except (AttributeError, ProcessLookupError):
-                self.process.terminate()
+                self._process.terminate()
         else:
             # Windows-specific: send Ctrl+C signal and then terminate
             try:
-                self.process.send_signal(signal.CTRL_C_EVENT)
+                self._process.send_signal(signal.CTRL_C_EVENT)
             except (AttributeError, ProcessLookupError):
-                self.process.terminate()
+                self._process.terminate()
 
         try:
-            self.process.wait(timeout=60)
+            self._process.wait(timeout=60)
 
         except subprocess.TimeoutExpired:
             if sys.platform != 'win32':
                 try:
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
+                    os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
                 except (AttributeError, ProcessLookupError):
-                    self.process.kill()
+                    self._process.kill()
             else:
-                self.process.kill()
+                self._process.kill()
     
-    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.FORK) -> bool:
-        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
-            return crm.mount_node(scenario_node_name, node_key, launch_params, start_service_immediately, reusibility)
-
-    def unmount_node(self, node_key: str) -> bool:
-        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
-            return crm.unmount_node(node_key)
+    def __getattr__(self, name):
+        icrm = ITreeger()
+        if hasattr(icrm, name):
+            def method_wrapper(*args, **kwargs):
+                with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
+                    remote_method = getattr(crm, name)
+                    return remote_method(*args, **kwargs)
+            return method_wrapper
+        else:
+            logger.error(f'Attribute {name} not found in ITreeger')
+            raise AttributeError(f'{name} not found in ITreeger')
         
-    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
-        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
-            return crm.activate_node(node_key, reusibility)
-    
-    def deactivate_node(self, node_key: str) -> bool:
-        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
-            return crm.deactivate_node(node_key)
-        
-    def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
-        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
-            return crm.get_node_info(node_key)
-    
     @contextmanager
     def connect(self, node_key: str, icrm: Type[T], deactivate_node_service: bool = False) -> Generator[T, None, None]:
         proxy_crm = None
         try:
-            with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
+            with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
                 tcp_address = crm.activate_node(node_key, ReuseAction.FORK)
                 
             client = cc.message.Client(tcp_address)
@@ -183,7 +176,7 @@ class BootStrappingTreeger:
             try:
                 # Terminate the CRM server process
                 if deactivate_node_service:
-                    with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
+                    with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
                         crm.deactivate_node(node_key)
                     
                 # Terminate the client connection
