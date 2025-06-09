@@ -53,7 +53,7 @@ class ITreeger:
     def unmount_node(self, node_key: str) -> bool:
         ...
         
-    def activate_node(self, node_key: str, reusibility: ReuseAction) -> str:
+    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
         ...
         
     def deactivate_node(self, node_key: str) -> bool:
