@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Import Grid (CRM)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from crms.grid import Grid
+from crms.topo import Topo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,13 +67,13 @@ if __name__ == '__main__':
         grid_file_path = Path(grid_project_path, 'patch.topo.arrow')
     
     # Init CRM
-    crm = Grid(
+    crm = Topo(
         epsg, bounds, first_size, subdivide_rules, grid_file_path
     )
     
     # Launch CRM server
-    logger.info('Starting CRM server...')
+    logger.info('Starting Grid Topo CRM...')
     server = cc.message.Server(tcp_address, crm)
     server.start()
-    logger.info('CRM server started at %s', tcp_address)
+    logger.info('Grid Topo CRM started at %s', tcp_address)
     server.wait_for_termination()

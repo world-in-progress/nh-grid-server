@@ -8,7 +8,7 @@ from ....core.config import settings
 
 # APIs for multiple grid projects ################################################
 
-router = APIRouter(prefix='/projects', tags=['grid / projects'])
+router = APIRouter(prefix='/projects')
 
 @router.get('/', response_model=project.ResponseWithProjectMetas)
 def get_project_metas(startIndex: int = 0, endIndex: int = None):

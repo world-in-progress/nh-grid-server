@@ -1,0 +1,26 @@
+meta:
+  configuration:
+    max_ports: 20
+    port_range: [5556, 6555]
+    scene_path: resource/scene.yaml
+  crm_entries:
+    - name: Treeger
+      icrm: ITreeger
+      crm_launcher: scripts/treeger.crm.py
+    - name: Topo
+      icrm: ITopo
+      crm_launcher: scripts/topo.crm.py
+  scenario:
+    name: root
+    children:
+      - name: schemas
+        children:
+          - name: schema
+      - name: projects
+        children:
+          - name: project
+            children:
+              - name: patch
+                children:
+                  - name: topo
+                    crm: Topo

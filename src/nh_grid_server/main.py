@@ -7,20 +7,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import api_router
 from .core.config import settings
 from .core.mcp_client import MCPClient
-from .core.server import close_current_project, init_working_directory
+from .core.server import init_working_directory
+from .core.bootstrapping_treeger import BT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_working_directory()
     
     # Initialize the MCP server from MCP client
     # agent_client = MCPClient()
     # app.state.agent_client = agent_client
     # await agent_client.connect_to_server(settings.MCP_SERVER_SCRIPT_PATH)
     
+    BT()
+    BT.instance.mount_node('schemas', 'root/schemas')
+    BT.instance.mount_node('projects', 'root/projects')
+    
+    init_working_directory()
+    
     yield
     
-    close_current_project()
+    # close_current_project()
+    
+    BT.instance.terminate()
     # await agent_client.cleanup()
 
 def create_app() -> FastAPI:

@@ -6,10 +6,11 @@ from ....core.config import settings
 from ....schemas.base import BaseResponse
 from ....schemas.project import ProjectMeta
 from ....schemas.schema import ProjectSchema, ResponseWithProjectSchema
+from ....core.bootstrapping_treeger import BT
 
 # APIs for single project schema ##################################################
 
-router = APIRouter(prefix='/schema', tags=['grid / schema'])
+router = APIRouter(prefix='/schema')
 
 @router.get('/{name}', response_model=ResponseWithProjectSchema)
 def get_schema(name: str):
@@ -55,6 +56,7 @@ def register_schema(data: ProjectSchema):
     try:
         with open(project_schema_path, 'w') as f:
             f.write(data.model_dump_json(indent=4))
+        BT.instance.mount_node('schema', f'root/schemas/{data.name}')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save project schema: {str(e)}')
     return BaseResponse(
@@ -120,6 +122,11 @@ def delete_schema(name: str):
     # Delete the schema file
     try:
         project_schema_path.unlink()
+        
+        # Unmount the schema node
+        node_key = f'root/schemas/{name}'
+        BT.instance.unmount_node(node_key)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete schema: {str(e)}')
     

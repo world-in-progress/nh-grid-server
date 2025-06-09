@@ -5,10 +5,11 @@ from fastapi import APIRouter, HTTPException
 
 from ....core.config import settings
 from ....schemas import base, project
+from ....core.bootstrapping_treeger import BT
 
 # APIs for grid project ################################################
 
-router = APIRouter(prefix='/project', tags=['grid / project'])
+router = APIRouter(prefix='/project')
 
 @router.get('/{name}', response_model=project.ResponseWithProjectMeta)
 def get_project_meta(name: str):
@@ -59,6 +60,7 @@ def create_project(data: project.ProjectMeta):
     try:
         with open(project_meta_path, 'w') as f:
             f.write(data.model_dump_json(indent=4))
+        BT.instance.mount_node('project', f'root/projects/{data.name}')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save grid project meta information: {str(e)}')
     
@@ -111,6 +113,10 @@ def delete_project(name: str):
     # Delete the folder of this project
     try:
         shutil.rmtree(project_path)
+        
+        # Unmount the project node
+        BT.instance.unmount_node(f'root/projects/{name}')
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete grid project: {str(e)}')
     

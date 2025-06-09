@@ -3,10 +3,10 @@ import pyarrow as pa
 import c_two as cc
 import numpy as np
 from osgeo import gdal, osr
-from icrms.igrid import IGrid, GridAttribute
+from icrms.itopo import ITopo, GridAttribute
 
 @cc.compo.runtime.connect
-def get_active_grid_render_infos(crm: IGrid) -> bytes:
+def get_active_grid_render_infos(crm: ITopo) -> bytes:
     # Get active grid information
     schema = crm.get_schema()
     levels, global_ids = crm.get_active_grid_infos()

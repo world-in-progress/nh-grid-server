@@ -1,9 +1,9 @@
 import c_two as cc
 import numpy as np
-from icrms.igrid import IGrid, GridAttribute
+from icrms.itopo import ITopo, GridAttribute
 
 @cc.compo.runtime.connect
-def get_grid_infos(grid: IGrid, level: int, global_ids: list[int]) -> list[GridAttribute]:
+def get_grid_infos(grid: ITopo, level: int, global_ids: list[int]) -> list[GridAttribute]:
     """Method to get information for a set of grids at the same level
     
     [DO NOT CALL DIRECTLY FROM LLM] - Use the flow() function instead
@@ -28,7 +28,7 @@ def get_grid_infos(grid: IGrid, level: int, global_ids: list[int]) -> list[GridA
     return grid.get_grid_infos(level, global_ids)
 
 @cc.compo.runtime.connect
-def subdivide_grids(grid: IGrid, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
+def subdivide_grids(grid: ITopo, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
     """Method to subdivide grids in the hierarchy
     
     [DO NOT CALL DIRECTLY FROM LLM] - Use the flow() function instead
@@ -56,7 +56,7 @@ def subdivide_grids(grid: IGrid, levels: list[int], global_ids: list[int]) -> tu
 
 
 @cc.compo.runtime.connect
-def get_active_grid_infos(crm: IGrid) -> tuple[list[int], list[int]]:
+def get_active_grid_infos(crm: ITopo) -> tuple[list[int], list[int]]:
     """
     Retrieves information about all active grids in the grid component.
     
