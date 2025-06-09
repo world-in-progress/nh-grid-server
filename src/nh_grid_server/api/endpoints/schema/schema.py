@@ -10,7 +10,7 @@ from ....core.bootstrapping_treeger import BT
 
 # APIs for single project schema ##################################################
 
-router = APIRouter(prefix='/schema', tags=['grid / schema'])
+router = APIRouter(prefix='/schema')
 
 @router.get('/{name}', response_model=ResponseWithProjectSchema)
 def get_schema(name: str):
@@ -122,6 +122,11 @@ def delete_schema(name: str):
     # Delete the schema file
     try:
         project_schema_path.unlink()
+        
+        # Unmount the schema node
+        node_key = f'root/schemas/{name}'
+        BT.instance.unmount_node(node_key)
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete schema: {str(e)}')
     

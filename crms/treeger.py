@@ -10,7 +10,7 @@ import subprocess
 import c_two as cc
 from pathlib import Path
 from dataclasses import dataclass, field
-from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType
+from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -456,6 +456,36 @@ class Treeger(ITreeger):
 
     def deactivate_node(self, node_key: str) -> bool:
         return self._stop_node_service(node_key)
+    
+    def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
+        # Check if the node exists in the scene
+        if node_key not in self.scene:
+            logger.warning(f'Node "{node_key}" not found in scene')
+            return None
+        
+        # Get the SceneNode instance
+        scene_node = self.scene[node_key]
+        
+        # Get the TCP address of the node if it is running
+        if node_key in self.process_pool:
+            process_info = self.process_pool[node_key]
+            if process_info.process and process_info.process.poll() is None:
+                # Process is running, return its address
+                tcp_address = process_info.address
+            else:
+                # Process is not running, return None
+                tcp_address = None
+                # Cleanup the process pool entry
+                self._release_node_port(node_key)
+        
+        # Prepare the node info
+        node_info = SceneNodeInfo(
+            node_key=scene_node.node_key,
+            scenario_node_name=scene_node.scenario_node.name,
+            parent_key=scene_node.parent.node_key if scene_node.parent else None,
+            tcp_address=tcp_address
+        )
+        return node_info
 
     def get_process_pool_status(self) -> dict:
         self._cleanup_finished_processes()

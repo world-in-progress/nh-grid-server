@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from typing import Generator, Type, TypeVar, cast
 
 from ..core.config import settings
-from icrms.itreeger import ITreeger, TreeMeta, ReuseAction
+from icrms.itreeger import ITreeger, TreeMeta, ReuseAction, SceneNodeInfo
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,11 +83,6 @@ class BootStrappingTreeger:
             logger.error(f'Failed to initialize Treeger from {self.meta_path}: {e}')
             self._initialized = False
             raise
-    
-    @property
-    def _icrm(self) -> ITreeger:
-        client = cc.message.Client(self.tcp_address)
-        return cast(ITreeger, ProxyCRM(ITreeger, client))
         
     def _bootstrap(self):
         # Platform-specific subprocess arguments
@@ -168,6 +163,10 @@ class BootStrappingTreeger:
     def deactivate_node(self, node_key: str) -> bool:
         with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
             return crm.deactivate_node(node_key)
+        
+    def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
+        with cc.compo.runtime.connect_crm(self.tcp_address, ITreeger) as crm:
+            return crm.get_node_info(node_key)
     
     @contextmanager
     def connect(self, node_key: str, icrm: Type[T], deactivate_node_service: bool = False) -> Generator[T, None, None]:

@@ -1,22 +1,71 @@
 import logging
+import c_two as cc
+import multiprocessing as mp
+
 from pathlib import Path
 from osgeo import ogr, osr
-import multiprocessing as mp
 from functools import partial
 from fastapi import APIRouter, Response, HTTPException, Body
 
-from ....schemas import grid, base
-from ....core.bootstrapping_treeger import BT
-from ....core.config import settings, APP_CONTEXT
+from ...schemas import grid, base
+from ...core.bootstrapping_treeger import BT
+from ...core.config import settings, APP_CONTEXT
+from ...schemas.project import ResourceCRMStatus
 
 from icrms.itopo import ITopo, GridSchema, TopoSaveInfo
 
-# APIs for grid operations ################################################
+# APIs for grid topology operations ################################################
 
-router = APIRouter(prefix='/operation', tags=['grid / operation'])
+router = APIRouter(prefix='/topo', tags=['patch-topo-related apis'])
+
+@router.get('/', response_model=ResourceCRMStatus)
+def check_topo_ready():
+    """
+    Description
+    --
+    Check if the topo runtime resource is ready.
+    """
+    try:
+        node_key = f'root/projects/{APP_CONTEXT["current_project"]}/{APP_CONTEXT["current_patch"]}/topo'
+        tcp_address = BT.instance.get_node_info(node_key).tcp_address
+        flag = cc.message.Client.ping(tcp_address)
+
+        return ResourceCRMStatus(
+            status='ACTIVATED' if flag else 'DEACTIVATED',
+            is_ready=flag
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to check CRM of the topo: {str(e)}')
+
+@router.get('/{project_name}/{patch_name}', response_model=base.BaseResponse)
+def set_patch_topo(project_name: str, patch_name: str):
+    """
+    Description
+    --
+    Set a specific patch topo as the current crm server.
+    """
+    # Check if the patch directory exists
+    project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
+    patch_dir = project_dir / patch_name
+    if not patch_dir.exists():
+        raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to project ({project_name}) not found')
+    
+    try:
+        node_key = f'root/projects/{project_name}/{patch_name}/topo'
+        APP_CONTEXT['current_project'] = project_name
+        APP_CONTEXT['current_patch'] = patch_name
+        BT.instance.activate_node(node_key)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
+    return base.BaseResponse(
+        success=True,
+        message='Grid patch set successfully'
+    )
 
 @router.get('/meta/{project_name}/{patch_name}', response_model=grid.GridMeta)
-def get_grid_meta(project_name: str, patch_name: str):
+def get_topo_meta(project_name: str, patch_name: str):
     """
     Get grid meta information for a specific patch
     """
@@ -31,7 +80,7 @@ def get_grid_meta(project_name: str, patch_name: str):
         raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
 @router.get('/meta', response_model=grid.GridMeta)
-def get_current_grid_meta():
+def get_current_topo_meta():
     """
     Get grid meta information of the current patch
     """
@@ -42,50 +91,64 @@ def get_current_grid_meta():
     
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():
-    with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
-        levels, global_ids = topo.get_active_grid_infos()
-    grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-    
-    return Response(
-        content=grid_infos.combine_bytes(),
-        media_type='application/octet-stream'
-    )
+    try:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+            levels, global_ids = topo.get_active_grid_infos()
+        grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
+        
+        return Response(
+            content=grid_infos.combine_bytes(),
+            media_type='application/octet-stream'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get active grid information: {str(e)}')
 
 @router.get('/deleted-info', response_class=Response, response_description='Returns deleted grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def deleted_grid_infos():
-    with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
-        levels, global_ids = topo.get_deleted_grid_infos()
-    grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-    
-    return Response(
-        content=grid_infos.combine_bytes(),
-        media_type='application/octet-stream'
-    )
+    try:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+            levels, global_ids = topo.get_deleted_grid_infos()
+        grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
+        
+        return Response(
+            content=grid_infos.combine_bytes(),
+            media_type='application/octet-stream'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get deleted grid information: {str(e)}')
 
 @router.post('/subdivide', response_class=Response, response_description='Returns subdivided grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def subdivide_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
-    grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-    with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
-        levels, global_ids = topo.subdivide_grids(grid_info.levels, grid_info.global_ids)
-    subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-    return Response(
-        content=subdivide_info.combine_bytes(),
-        media_type='application/octet-stream'
-    )
+    try:
+        grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+            levels, global_ids = topo.subdivide_grids(grid_info.levels, grid_info.global_ids)
+        subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
+        
+        return Response(
+            content=subdivide_info.combine_bytes(),
+            media_type='application/octet-stream'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to subdivide grids: {str(e)}')
 
 @router.post('/merge', response_class=Response, response_description='Returns merged grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def merge_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
     """
     Merge grids based on the provided grid information
     """
-    grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-    with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
-        levels, global_ids = topo.merge_multi_grids(grid_info.levels, grid_info.global_ids)
-        merge_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
-    return Response(
-        content=merge_info.combine_bytes(),
-        media_type='application/octet-stream'
-    )
+    try:
+        grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+            levels, global_ids = topo.merge_multi_grids(grid_info.levels, grid_info.global_ids)
+            merge_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
+            
+        return Response(
+            content=merge_info.combine_bytes(),
+            media_type='application/octet-stream'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to merge grids: {str(e)}')
         
 @router.post('/delete', response_model=base.BaseResponse)
 def delete_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
@@ -93,7 +156,7 @@ def delete_grids(grid_info_bytes: bytes = Body(..., description='Grid informatio
     Delete grids based on the provided grid information
     """
     try:
-        with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
             grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
             topo.delete_grids(grid_info.levels, grid_info.global_ids)
         
@@ -112,7 +175,7 @@ def recover_grids(grid_info_bytes: bytes = Body(..., description='Grid informati
     """
     try:
         grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-        with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
             topo.recover_multi_grids(grid_info.levels, grid_info.global_ids)
 
         return base.BaseResponse(
@@ -138,7 +201,7 @@ def pick_grids_by_feature(feature_dir: str):
 
     try:
         # Step 1: Prepare target spatial reference
-        with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
             schema: GridSchema = topo.get_schema()
         target_epsg: int = schema.epsg
         target_sr = osr.SpatialReference()
@@ -187,7 +250,7 @@ def pick_grids_by_feature(feature_dir: str):
             raise HTTPException(status_code=400, detail=f'No geometries found in feature file: {feature_dir}')
 
         # Step 3: Get centers of all active grids
-        with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
             active_levels, active_global_ids = topo.get_active_grid_infos()
             
             if not active_levels or not active_global_ids:
@@ -260,7 +323,7 @@ def save_grids():
     Save the current grid state to a file.
     """
     try:
-        with BT.instance.connect(_get_current_patch_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
             result: TopoSaveInfo = topo.save()
             logging.info(f'Grid saved successfully: {result}')
         return base.BaseResponse(
@@ -273,8 +336,8 @@ def save_grids():
     
 # Helpers ##################################################
 
-def _get_current_patch_node():
-    return f'root/projects/{APP_CONTEXT.get("current_project")}/{APP_CONTEXT.get("current_patch")}'
+def _get_current_topo_node():
+    return f'root/projects/{APP_CONTEXT.get("current_project")}/{APP_CONTEXT.get("current_patch")}/topo'
 
 def _process_grid_batch(batch_data, geometry_wkts):
     # _ is batch_indices

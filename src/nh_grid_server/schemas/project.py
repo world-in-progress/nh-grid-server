@@ -14,7 +14,7 @@ class PatchMeta(BaseModel):
             raise ValueError('bounds must have exactly 4 values [min_lon, min_lat, max_lon, max_lat]')
         return v
 
-class PatchStatus(BaseModel):
+class ResourceCRMStatus(BaseModel):
     """Status of the project"""
     status: str # 'ACTIVATED', 'DEACTIVATED'
     is_ready: bool # True if the project is ready to be used

@@ -1,7 +1,7 @@
 import c_two as cc
 from enum import Enum
 from pydantic import BaseModel
-from typing import Optional
+from dataclasses import dataclass
 
 class ScenarioNodeType(Enum):
     Unknown = 0
@@ -38,6 +38,13 @@ class ReuseAction(Enum):
     FORK = 1
     REPLACE = 2
 
+@dataclass
+class SceneNodeInfo():
+    node_key: str
+    scenario_node_name: str
+    parent_key: str | None = None
+    tcp_address: str | None = None
+
 @cc.icrm
 class ITreeger:
     def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.FORK) -> bool:
@@ -50,4 +57,10 @@ class ITreeger:
         ...
         
     def deactivate_node(self, node_key: str) -> bool:
+        ...
+    
+    def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
+        ...
+    
+    def get_process_pool_status(self) -> dict:
         ...

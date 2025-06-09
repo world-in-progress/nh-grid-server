@@ -8,7 +8,7 @@ from ....schemas.schema import ProjectSchema, ResponseWithProjectSchemas
 
 # APIs for multiple project schemas ################################################
 
-router = APIRouter(prefix='/schemas', tags=['grid / schemas'])
+router = APIRouter(prefix='/schemas')
 
 @router.get('/', response_model=ResponseWithProjectSchemas)
 def get_schemas(startIndex: int = 0, endIndex: int = None):

@@ -1,10 +1,10 @@
 from fastapi import APIRouter
 import c_two as cc
 from icrms.ifeature import IFeature
-from ....core.config import settings
+from ...core.config import settings
 from fastapi import APIRouter, Response, HTTPException, Body
 import json
-from ....schemas.feature import UploadBody
+from ...schemas.feature import UploadBody
 import logging
 
 logging.basicConfig(level=logging.INFO)

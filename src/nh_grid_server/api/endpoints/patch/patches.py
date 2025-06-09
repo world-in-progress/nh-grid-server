@@ -8,7 +8,7 @@ from ....schemas.project import PatchMeta, ResponseWithPatchMetas
 
 # APIs for multi grid patches ################################################
 
-router = APIRouter(prefix='/patches', tags=['grid / patches'])
+router = APIRouter(prefix='/patches')
 
 @router.get('/{project_name}', response_model=ResponseWithPatchMetas)
 def get_multi_patch_meta(project_name: str):
