@@ -157,7 +157,7 @@ class Treeger(ITreeger):
         # If the node should start immediately, activate it
         if start_service_immediately:
             try:
-                self.activate_node(node_key, reusibility)
+                self._start_node_service(node_key, reusibility)
             except Exception as e:
                 logger.error(f'Failed to activate node "{node_key}": {e}')
                 return False
