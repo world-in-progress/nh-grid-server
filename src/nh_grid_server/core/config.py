@@ -18,9 +18,13 @@ class Settings(BaseSettings):
     # Proxy configuration
     HTTP_PROXY: str
     HTTPS_PROXY: str
+    
+    # Treeger meta configuration
+    TREEGER_TCP_ADDRESS: str = 'tcp://localhost:5555'
+    SCENARIO_META_PATH: str = str(ROOT_DIR / 'scenario.meta.yaml')
 
     # Patch CRM configuration
-    TCP_ADDRESS: str = 'tcp://localhost:5555'
+    TCP_ADDRESS: str = 'tcp://localhost:5556'
     CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
 
     # Feature CRM configuration
@@ -31,11 +35,11 @@ class Settings(BaseSettings):
     FEATURE_RESOURCE_POOL_META_FILE_NAME: str = 'resource_pool.meta.json'
     
     # Grid schema related constants
-    GRID_SCHEMA_DIR: str = 'resource/grid/schemas/'
-    GRID_SCHEMA_FILE: str = 'resource/grid/schema.json'
+    GRID_SCHEMA_DIR: str = 'resource/schemas/'
+    GRID_SCHEMA_FILE: str = 'resource/schema.json'
     
     # Grid project related constants
-    GRID_PROJECT_DIR: str = 'resource/grid/projects/'
+    GRID_PROJECT_DIR: str = 'resource/projects/'
     GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'
     
     # Grid-related constants

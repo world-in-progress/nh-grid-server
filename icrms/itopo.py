@@ -295,7 +295,7 @@ class TopoSaveInfo:
 # Define ICRM ###########################################################
 
 @cc.icrm
-class IGrid:
+class ITopo:
     """
     ICRM
     =

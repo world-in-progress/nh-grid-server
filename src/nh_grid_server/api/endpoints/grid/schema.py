@@ -6,6 +6,7 @@ from ....core.config import settings
 from ....schemas.base import BaseResponse
 from ....schemas.project import ProjectMeta
 from ....schemas.schema import ProjectSchema, ResponseWithProjectSchema
+from ....core.bootstrapping_treeger import BT
 
 # APIs for single project schema ##################################################
 
@@ -55,6 +56,7 @@ def register_schema(data: ProjectSchema):
     try:
         with open(project_schema_path, 'w') as f:
             f.write(data.model_dump_json(indent=4))
+        BT.instance.mount_node('schema', f'root/schemas/{data.name}')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save project schema: {str(e)}')
     return BaseResponse(

@@ -1,0 +1,53 @@
+import c_two as cc
+from enum import Enum
+from pydantic import BaseModel
+from typing import Optional
+
+class ScenarioNodeType(Enum):
+    Unknown = 0
+    Resource = 1
+    Conception = 2
+    Aggregation = 3
+
+class CRMEntry(BaseModel):
+    name: str
+    icrm: str
+    crm_launcher: str
+    tcp_address: str | None = None
+
+class ScenarioNode(BaseModel):
+    name: str
+    crm: str | None = None
+    semantic_path: str = ''
+    parent: 'ScenarioNode' = None
+    children: list['ScenarioNode'] = []
+    node_type: ScenarioNodeType = ScenarioNodeType.Unknown
+    
+class TreeConfiguration(BaseModel):
+    max_ports: int
+    scene_path: str
+    port_range: tuple[int, int]
+
+class TreeMeta(BaseModel):
+    scenario: ScenarioNode
+    crm_entries: list[CRMEntry]
+    configuration: TreeConfiguration
+
+class ReuseAction(Enum):
+    KEEP = 0
+    FORK = 1
+    REPLACE = 2
+
+@cc.icrm
+class ITreeger:
+    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.FORK) -> bool:
+        ...
+    
+    def unmount_node(self, node_key: str) -> bool:
+        ...
+        
+    def activate_node(self, node_key: str, reusibility: ReuseAction) -> str:
+        ...
+        
+    def deactivate_node(self, node_key: str) -> bool:
+        ...

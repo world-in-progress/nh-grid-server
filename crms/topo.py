@@ -8,7 +8,7 @@ import pyarrow.ipc as ipc
 import multiprocessing as mp
 from functools import partial
 from collections import Counter
-from icrms.igrid import IGrid, GridSchema, GridAttribute, TopoSaveInfo
+from icrms.itopo import ITopo, GridSchema, GridAttribute, TopoSaveInfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ GRID_SCHEMA: pa.Schema = pa.schema([
 ])
 
 @cc.iicrm
-class Grid(IGrid):
+class Topo(ITopo):
     """
     CRM
     =

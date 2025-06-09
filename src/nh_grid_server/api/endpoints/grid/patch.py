@@ -3,10 +3,13 @@ import c_two as cc
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ....core.config import settings
 from ....schemas.base import BaseResponse
-from ....core.server import set_current_project, set_current_feature
+from ....core.bootstrapping_treeger import BT
+from ....core.server import set_current_feature
+from ....core.config import settings, APP_CONTEXT
 from ....schemas.project import ProjectMeta, PatchStatus, PatchMeta
+
+from icrms.itreeger import ReuseAction
 
 # APIs for grid patch ################################################
 
@@ -21,7 +24,9 @@ def check_patch_ready():
     """
     
     try:
-        flag = cc.message.Client.ping(settings.TCP_ADDRESS)
+        node_key = f'root/projects/{APP_CONTEXT["current_project"]}/{APP_CONTEXT["current_patch"]}'
+        tcp_address = BT.instance.activate_node(node_key)
+        flag = cc.message.Client.ping(tcp_address)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to check CRM of the patch: {str(e)}')
 
@@ -43,17 +48,13 @@ def set_patch(project_name: str, patch_name: str):
     patch_dir = project_dir / patch_name
     if not patch_dir.exists():
         raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to project ({project_name}) not found')
-
-    try:
-        project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
-        with open(project_meta_file, 'r') as f:
-            data = json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
     
-    project_meta = ProjectMeta(**data)
     try:
-        set_current_project(project_meta, patch_name)
+        node_key = f'root/projects/{project_name}/{patch_name}'
+        APP_CONTEXT['current_project'] = project_name
+        APP_CONTEXT['current_patch'] = patch_name
+        BT.instance.activate_node(node_key)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
     return BaseResponse(
@@ -74,6 +75,21 @@ def create_patch(project_name: str, data: PatchMeta):
     if not project_dir.exists():
         raise HTTPException(status_code=404, detail=f'Grid project ({project_name}) not found')
 
+    try:
+        project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
+        with open(project_meta_file, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
+    
+    project_meta = ProjectMeta(**data)
+    project_path = Path(settings.GRID_PROJECT_DIR, project_meta.name)
+
+    # Check if schema is valid
+    schema_file_path = Path(settings.GRID_SCHEMA_DIR) / f'{project_meta.schema_name}.json'
+    if not schema_file_path.exists():
+        raise FileNotFoundError(f'Schema file {schema_file_path} does not exist')
+
     # Check if the patch directory already exists
     patch_dir = project_dir / data.name
     if patch_dir.exists():
@@ -88,6 +104,16 @@ def create_patch(project_name: str, data: PatchMeta):
     try:
         with open(patch_meta_file, 'w') as f:
             f.write(data.model_dump_json(indent=4))
+            node_key = f'root/projects/{project_name}/{data.name}'
+            BT.instance.mount_node(
+                'topo', node_key,
+                {
+                    'temp': settings.GRID_PATCH_TEMP,
+                    'schema_file_path': str(schema_file_path),
+                    'grid_project_path': str(project_path / data.name),
+                    'meta_file_name': settings.GRID_PATCH_META_FILE_NAME,
+                }
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save grid patch meta information: {str(e)}')
 

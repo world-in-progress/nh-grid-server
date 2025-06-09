@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 
 def init_working_directory():
     """Ensure the working directory structure exists for the server"""
-    resource_dir = os.path.join(os.getcwd(), 'resource')
-    grid_dir = os.path.join(resource_dir, 'grid')
-
-    os.makedirs(grid_dir, exist_ok=True)
-    os.makedirs(resource_dir, exist_ok=True)
-    os.makedirs(settings.GRID_SCHEMA_DIR, exist_ok=True)
-    os.makedirs(settings.GRID_PROJECT_DIR, exist_ok=True)
+    
+    resource_path = Path(os.getcwd()) / 'resource'
+    resource_path.mkdir(parents=True, exist_ok=True)
+    
+    schemas_path = resource_path / 'schemas'
+    schemas_path.mkdir(parents=True, exist_ok=True)
+    
+    projects_path = resource_path / 'projects'
+    projects_path.mkdir(parents=True, exist_ok=True)
 
 def set_current_project(project_meta: ProjectMeta, patch_name: str) -> bool:
     
