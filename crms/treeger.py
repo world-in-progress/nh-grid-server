@@ -419,31 +419,9 @@ class Treeger(ITreeger):
         try:
             process_info = self.process_pool[node_key]
             process = process_info.process
-
-            if process:
-                if sys.platform != 'win32':
-                    # Unix-specific: terminate the process group
-                    try:
-                        os.killpg(os.getpgid(process.pid), signal.SIGINT)
-                    except (AttributeError, ProcessLookupError):
-                        process.terminate()
-                else:
-                    # Windows-specific: send Ctrl+C signal and then terminate
-                    try:
-                        process.send_signal(signal.CTRL_C_EVENT)
-                    except (AttributeError, ProcessLookupError):
-                        process.terminate()
-
-                try:
-                    process.wait(timeout=60)
-                except subprocess.TimeoutExpired:
-                    if sys.platform != 'win32':
-                        try:
-                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                        except (AttributeError, ProcessLookupError):
-                            process.kill()
-                    else:
-                        process.kill()
+            tcp_address = process_info.address
+            if cc.message.Client.shutdown(tcp_address, process=process, timeout=60) is False:
+                raise RuntimeError(f'Failed to shutdown node "{node_key}" at {tcp_address}')
                 
             self._release_node_port(node_key)
             

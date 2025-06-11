@@ -123,31 +123,10 @@ class BootStrappingTreeger:
         # Terminate the CRM process
         if self._process is None:
             return
-            
-        if sys.platform != 'win32':
-            # Unix-specific: terminate the process group
-            try:
-                os.killpg(os.getpgid(self._process.pid), signal.SIGINT)
-            except (AttributeError, ProcessLookupError):
-                self._process.terminate()
-        else:
-            # Windows-specific: send Ctrl+C signal and then terminate
-            try:
-                self._process.send_signal(signal.CTRL_C_EVENT)
-            except (AttributeError, ProcessLookupError):
-                self._process.terminate()
-
-        try:
-            self._process.wait(timeout=60)
-
-        except subprocess.TimeoutExpired:
-            if sys.platform != 'win32':
-                try:
-                    os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
-                except (AttributeError, ProcessLookupError):
-                    self._process.kill()
-            else:
-                self._process.kill()
+        
+        while cc.message.Client.shutdown(self._tcp_address, process=self._process) is False:
+            logger.info('Waiting for Treeger CRM to shutdown...')
+            time.sleep(1)
     
     def __getattr__(self, name):
         icrm = ITreeger()
