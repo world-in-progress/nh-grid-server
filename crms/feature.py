@@ -32,12 +32,12 @@ class Feature(IFeature):
         os.makedirs(feature_path, exist_ok=True)
         logger.info(f'Feature initialized with feature path: {feature_path}')
 
-    def upload_feature(self, file_path: str, file_type: str) -> dict[str, bool | str]:
+    def upload_feature(self, file_path: str, file_type: str, feature_type: str) -> dict[str, bool | str]:
         """
         Upload a feature file to the resource pool
         """
 
-        logger.info(f'Uploading feature in crm: {file_path}-{file_type}')
+        logger.info(f'Uploading feature in crm: {file_path}-{file_type}-{feature_type}')
 
         if file_type == 'json':
             return {
