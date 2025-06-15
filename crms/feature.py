@@ -1,4 +1,5 @@
 import c_two as cc
+from src.nh_grid_server.schemas.feature import FeatureProperty
 from icrms.ifeature import IFeature
 import logging
 import os
@@ -26,15 +27,17 @@ class Feature(IFeature):
             feature_path (str): path to the feature file
         """
         self.feature_path = Path(feature_path)
+        self.meta_path = os.path.join(feature_path, 'meta.json')
+        os.makedirs(os.path.dirname(self.meta_path), exist_ok=True)
         os.makedirs(feature_path, exist_ok=True)
         logger.info(f'Feature initialized with feature path: {feature_path}')
 
-    def upload_feature(self, file_path: str, file_type: str, feature_type: str) -> dict[str, bool | str]:
+    def upload_feature(self, file_path: str, file_type: str) -> dict[str, bool | str]:
         """
         Upload a feature file to the resource pool
         """
 
-        logger.info(f'Uploading feature in crm: {file_path}-{file_type}-{feature_type}')
+        logger.info(f'Uploading feature in crm: {file_path}-{file_type}')
 
         if file_type == 'json':
             return {
@@ -44,7 +47,7 @@ class Feature(IFeature):
         elif file_type == 'shp':
             geojson = self._shp_to_geojson(file_path)
             # 将geojson写入文件
-            file_path = str(self.feature_path / feature_type / os.path.basename(file_path) + '.json')
+            file_path = str(self.feature_path / os.path.basename(file_path) + '.json')
             with open(file_path, 'w') as f:
                 json.dump(geojson, f, ensure_ascii=False, indent=2)
             logger.info(f'Converting shp file to geojson: {file_path}')
@@ -58,7 +61,7 @@ class Feature(IFeature):
                 'file_path': '',
             }
 
-    def save_uploaded_feature(self, file_path: str, feature_type: str, feature_json: dict[str, Any], is_edited: bool) -> dict[str, bool | str]:
+    def save_uploaded_feature(self, file_path: str, feature_json: dict[str, Any], is_edited: bool) -> dict[str, bool | str]:
         """
         Save feature to resource pool
         """
@@ -68,7 +71,7 @@ class Feature(IFeature):
                 # 获取文件名
                 file_name = os.path.basename(file_path)
                 # 复制文件到资源池
-                target_path = os.path.join(self.feature_path, feature_type, file_name + '.json')
+                target_path = os.path.join(self.feature_path, file_name + '.json')
                 # 创建目录
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 # 将json写入
@@ -94,20 +97,34 @@ class Feature(IFeature):
                 'message': str(e),
                 'resource_path': ""
             }
-        
-    def save_feature(self, feature_name: str, feature_type: str, feature_json: dict[str, Any]) -> dict[str, bool | str]:
+
+    def save_feature(self, feature_property: FeatureProperty, feature_json: dict[str, Any]) -> dict[str, bool | str]:
         try:
-            # 构造目标文件路径
-            target_path = os.path.join(self.feature_path, feature_type, feature_name + '.json')
+            # 构造目标数据文件路径
+            data_path = os.path.join(self.feature_path, feature_property.id + "_" + feature_property.name + '.geojson')
             # 创建目录
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            os.makedirs(os.path.dirname(data_path), exist_ok=True)
             # 写入格式化的json内容
-            with open(target_path, 'w', encoding='utf-8') as f:
+            with open(data_path, 'w', encoding='utf-8') as f:
                 json.dump(feature_json, f, ensure_ascii=False, indent=2)
+            # 先读取meta的json，找到是否有同id的，如果有，则更新，否则追加
+            if os.path.exists(self.meta_path):
+                with open(self.meta_path, 'r', encoding='utf-8') as f:
+                    meta_json = json.load(f)
+            else:
+                meta_json = []
+            for item in meta_json:
+                if item['id'] == feature_property.id:
+                    item.update(feature_property.model_dump())
+                    break
+            else:
+                meta_json.append(feature_property.model_dump())
+            with open(self.meta_path, 'w', encoding='utf-8') as f:
+                json.dump(meta_json, f, ensure_ascii=False, indent=2)
             return {
                 'success': True,
                 'message': 'Feature saved successfully',
-                'resource_path': target_path
+                'resource_path': data_path
             }
         except Exception as e:
             logger.error(f'Failed to save feature: {str(e)}')
@@ -117,13 +134,35 @@ class Feature(IFeature):
                 'resource_path': ''
             }
         
-    def get_feature_json(self, feature_name: str, feature_type: str) -> dict[str, Any]:
+    def get_feature_json(self, feature_name: str) -> dict[str, Any]:
         """
         Get feature json
         """
-        file_path = os.path.join(self.feature_path, feature_type, feature_name + '.json')
+        file_path = os.path.join(self.feature_path, feature_name + '.geojson')
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+
+    def get_feature_meta(self) -> dict[str, Any]:
+        """
+        Get feature meta
+        """
+        if os.path.exists(self.meta_path):
+            with open(self.meta_path, 'r', encoding='utf-8') as f:
+                meta_json = json.load(f)
+        else:
+            meta_json = []
+        return meta_json
+
+    def get_feature_meta(self) -> list[FeatureProperty]:
+        """
+        Get feature list
+        """
+        if os.path.exists(self.meta_path):
+            with open(self.meta_path, 'r', encoding='utf-8') as f:
+                meta_json = json.load(f)
+        else:
+            meta_json = []
+        return meta_json
 
     def _shp_to_geojson(self, shp_path):
         # 如果输入是zip文件，先解压
@@ -198,3 +237,5 @@ class Feature(IFeature):
         if not shp_path:
             raise FileNotFoundError('未在zip包中找到shp文件')
         return shp_path
+    
+    

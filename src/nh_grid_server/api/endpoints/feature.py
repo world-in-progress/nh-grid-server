@@ -4,7 +4,7 @@ from icrms.ifeature import IFeature
 from ...core.config import settings, APP_CONTEXT
 from fastapi import APIRouter, Response, HTTPException, Body
 import json
-from ...schemas.feature import UploadBody, FeatureSaveBody, UploadedFeatureSaveBody, GetFeatureJsonInfo
+from ...schemas.feature import UploadBody, FeatureSaveBody, UploadedFeatureSaveBody, GetFeatureJsonInfo, FeatureMeta
 import logging
 from ...core.bootstrapping_treeger import BT
 from ...schemas.project import ResourceCRMStatus
@@ -61,12 +61,26 @@ def set_patch_feature(project_name: str, patch_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
 
+@router.get('/meta', response_model=FeatureMeta)
+def get_current_feature_meta():
+    """
+    Get grid meta information of the current patch
+    """
+    try:
+        with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
+            feature_meta = feature.get_feature_meta()
+        return FeatureMeta(
+            feature_meta=feature_meta
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
+
 @router.post('/upload', response_description='Returns upload information in json')
 def upload_feature(body: UploadBody=Body(..., description='upload feature info')):
     try:
         with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            logger.info(f'Uploading feature: {body.file_path} {body.file_type} {body.feature_type}')
-            upload_info = feature.upload_feature(body.file_path, body.file_type, body.feature_type)
+            logger.info(f'Uploading feature: {body.file_path} {body.file_type}')
+            upload_info = feature.upload_feature(body.file_path, body.file_type)
 
             logger.info(f'Uploading feature info: {upload_info}')
             
@@ -81,8 +95,8 @@ def upload_feature(body: UploadBody=Body(..., description='upload feature info')
 def save_feature(body: FeatureSaveBody=Body(..., description='save feature info')):
     try:
         with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            logger.info(f'Saving feature: {body.feature_name} {body.feature_type}')
-            save_info = feature.save_feature(body.feature_name, body.feature_type, body.feature_json)
+            logger.info(f'Saving feature: {body.feature_property.id + "_" + body.feature_property.name}')
+            save_info = feature.save_feature(body.feature_property, body.feature_json)
         return Response(
             content=json.dumps(save_info),
                 media_type='application/json'
@@ -94,7 +108,7 @@ def save_feature(body: FeatureSaveBody=Body(..., description='save feature info'
 def save_uploaded_feature(body: UploadedFeatureSaveBody=Body(..., description='save uploaded feature info')):
     try:
         with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            save_info = feature.save_uploaded_feature(body.file_path, body.feature_type, body.feature_json, body.is_edited)
+            save_info = feature.save_uploaded_feature(body.file_path, body.feature_json, body.is_edited)
         return Response(
             content=json.dumps(save_info),
                 media_type='application/json'
@@ -106,7 +120,7 @@ def save_uploaded_feature(body: UploadedFeatureSaveBody=Body(..., description='s
 def get_feature_json(body: GetFeatureJsonInfo=Body(..., description='get feature json info')):
     try:
         with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            feature_json = feature.get_feature_json(body.feature_name, body.feature_type)
+            feature_json = feature.get_feature_json(body.feature_name)
         return Response(
             content=json.dumps(feature_json),
                 media_type='application/json'
@@ -114,6 +128,18 @@ def get_feature_json(body: GetFeatureJsonInfo=Body(..., description='get feature
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get feature json: {str(e)}')
     
+@router.get('/list')
+def get_feature_list():
+    try:
+        with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
+            feature_list = feature.get_feature_list()
+        return Response(
+            content=json.dumps(feature_list),
+                media_type='application/json'
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get feature list: {str(e)}')
+
 # Helpers ##################################################
 
 def _get_current_feature_node():
