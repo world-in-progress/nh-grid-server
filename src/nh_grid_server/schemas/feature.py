@@ -13,6 +13,11 @@ class FeatureProperty(BaseModel):
     icon: str
     symbology: str
 
+class UpdateFeaturePropertyBody(BaseModel):
+    name: str
+    icon: str
+    symbology: str
+
 class FeatureSaveBody(BaseModel):
     feature_property: FeatureProperty
     feature_json: dict[str, Any]

@@ -2,7 +2,7 @@ import json
 import c_two as cc
 import pyarrow as pa
 from typing import Any, List
-from src.nh_grid_server.schemas.feature import FeatureProperty
+from src.nh_grid_server.schemas.feature import FeatureProperty, UpdateFeaturePropertyBody
 
 # Define transferables ##################################################
 
@@ -100,10 +100,13 @@ class IFeature:
     def save_feature(self, feature_property: FeatureProperty, feature_json: dict[str, Any]) -> dict[str, bool | str]:
         ...
 
-    def get_feature_json(self, feature_name: str) -> dict[str, Any]:
+    def delete_feature(self, feature_id: str) -> dict[str, bool | str]:
         ...
 
-    def get_feature_meta(self) -> dict[str, Any]:
+    def update_feature_property(self, feature_id: str, feature_property: UpdateFeaturePropertyBody) -> dict[str, bool | str]:
+        ...
+
+    def get_feature_json(self, feature_name: str) -> dict[str, Any]:
         ...
 
     def get_feature_meta(self) -> list[FeatureProperty]:
