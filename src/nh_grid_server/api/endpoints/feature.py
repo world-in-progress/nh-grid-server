@@ -4,7 +4,7 @@ from icrms.ifeature import IFeature
 from ...core.config import settings, APP_CONTEXT
 from fastapi import APIRouter, Response, HTTPException, Body
 import json
-from ...schemas.feature import UploadBody, FeatureSaveBody, UploadedFeatureSaveBody, GetFeatureJsonInfo, FeatureMeta
+from ...schemas.feature import UploadBody, FeatureSaveBody, UploadedFeatureSaveBody, GetFeatureJsonInfo, FeatureMeta, UpdateFeaturePropertyBody
 import logging
 from ...core.bootstrapping_treeger import BT
 from ...schemas.project import ResourceCRMStatus
@@ -95,7 +95,7 @@ def upload_feature(body: UploadBody=Body(..., description='upload feature info')
 def save_feature(body: FeatureSaveBody=Body(..., description='save feature info')):
     try:
         with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            logger.info(f'Saving feature: {body.feature_property.id + "_" + body.feature_property.name}')
+            logger.info(f'Saving feature: {body.feature_property.id}')
             save_info = feature.save_feature(body.feature_property, body.feature_json)
         return Response(
             content=json.dumps(save_info),
@@ -104,6 +104,30 @@ def save_feature(body: FeatureSaveBody=Body(..., description='save feature info'
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to save feature: {str(e)}')
     
+@router.delete('/{feature_id}')
+def delete_feature(feature_id: str):
+    try:
+        with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
+            delete_info = feature.delete_feature(feature_id)
+        return Response(
+            content=json.dumps(delete_info),
+                media_type='application/json'
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to delete feature: {str(e)}')
+
+@router.put('/{feature_id}')
+def update_feature_property(feature_id: str, body: UpdateFeaturePropertyBody=Body(..., description='update feature property')):
+    try:
+        with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
+            update_info = feature.update_feature_property(feature_id, body)
+        return Response(
+            content=json.dumps(update_info),
+                media_type='application/json'
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to update feature property: {str(e)}')
+
 @router.post('/save_uploaded')
 def save_uploaded_feature(body: UploadedFeatureSaveBody=Body(..., description='save uploaded feature info')):
     try:
@@ -127,18 +151,6 @@ def get_feature_json(body: GetFeatureJsonInfo=Body(..., description='get feature
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get feature json: {str(e)}')
-    
-@router.get('/list')
-def get_feature_list():
-    try:
-        with BT.instance.connect(_get_current_feature_node(), IFeature) as feature:
-            feature_list = feature.get_feature_list()
-        return Response(
-            content=json.dumps(feature_list),
-                media_type='application/json'
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to get feature list: {str(e)}')
 
 # Helpers ##################################################
 

@@ -1,5 +1,5 @@
 import c_two as cc
-from src.nh_grid_server.schemas.feature import FeatureProperty
+from src.nh_grid_server.schemas.feature import FeatureProperty, UpdateFeaturePropertyBody
 from icrms.ifeature import IFeature
 import logging
 import os
@@ -101,7 +101,7 @@ class Feature(IFeature):
     def save_feature(self, feature_property: FeatureProperty, feature_json: dict[str, Any]) -> dict[str, bool | str]:
         try:
             # 构造目标数据文件路径
-            data_path = os.path.join(self.feature_path, feature_property.id + "_" + feature_property.name + '.geojson')
+            data_path = os.path.join(self.feature_path, feature_property.id + '.geojson')
             # 创建目录
             os.makedirs(os.path.dirname(data_path), exist_ok=True)
             # 写入格式化的json内容
@@ -134,6 +134,48 @@ class Feature(IFeature):
                 'resource_path': ''
             }
         
+    def delete_feature(self, feature_id: str) -> dict[str, bool | str]:
+        """
+        Delete feature
+        """
+        file_path = os.path.join(self.feature_path, feature_id + '.geojson')
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            # 删除meta中的对应id
+            with open(self.meta_path, 'r', encoding='utf-8') as f:
+                meta_json = json.load(f)
+            for item in meta_json:
+                if item['id'] == feature_id:
+                    meta_json.remove(item)
+            with open(self.meta_path, 'w', encoding='utf-8') as f:
+                json.dump(meta_json, f, ensure_ascii=False, indent=2)
+            return {
+                'success': True,
+                'message': 'Feature deleted successfully',
+            }
+        else:
+            return {
+                'success': False,   
+                'message': 'Feature not found',
+            }
+        
+    def update_feature_property(self, feature_id: str, feature_property: UpdateFeaturePropertyBody) -> dict[str, bool | str]:
+        """
+        Update feature property
+        """
+        with open(self.meta_path, 'r', encoding='utf-8') as f:
+            meta_json = json.load(f)
+        for item in meta_json:
+            if item['id'] == feature_id:
+                item.update(feature_property.model_dump())
+                break
+        with open(self.meta_path, 'w', encoding='utf-8') as f:
+            json.dump(meta_json, f, ensure_ascii=False, indent=2)
+        return {
+            'success': True,
+            'message': 'Feature property updated successfully',
+        }
+        
     def get_feature_json(self, feature_name: str) -> dict[str, Any]:
         """
         Get feature json
@@ -145,17 +187,6 @@ class Feature(IFeature):
     def get_feature_meta(self) -> dict[str, Any]:
         """
         Get feature meta
-        """
-        if os.path.exists(self.meta_path):
-            with open(self.meta_path, 'r', encoding='utf-8') as f:
-                meta_json = json.load(f)
-        else:
-            meta_json = []
-        return meta_json
-
-    def get_feature_meta(self) -> list[FeatureProperty]:
-        """
-        Get feature list
         """
         if os.path.exists(self.meta_path):
             with open(self.meta_path, 'r', encoding='utf-8') as f:
