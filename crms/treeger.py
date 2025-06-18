@@ -157,7 +157,7 @@ class Treeger(ITreeger):
         # If the node should start immediately, activate it
         if start_service_immediately:
             try:
-                self._start_node_service(node_key, reusibility)
+                self.activate_node(node_key, reusibility)
             except Exception as e:
                 logger.error(f'Failed to activate node "{node_key}": {e}')
                 return False
@@ -175,7 +175,7 @@ class Treeger(ITreeger):
         
         # Stop the node service if it's running
         if node_key in self.process_pool:
-            self._stop_node_service(node_key)
+            self.deactivate_node(node_key)
         
         # Remove the node from the scene
         node = self.scene[node_key]
@@ -230,7 +230,7 @@ class Treeger(ITreeger):
     def terminate(self) -> bool:
         try:
             for node_key in list(self.process_pool.keys()):
-                self._stop_node_service(node_key)
+                self.deactivate_node(node_key)
             
             logger.info('All nodes stopped successfully')
             
@@ -318,7 +318,7 @@ class Treeger(ITreeger):
             logger.debug(f'Allocated address {address}')
             return address
     
-    def _start_node_service(self, node_key: str, reusibility: ReuseAction) -> str:
+    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
         # Check if the node is valid
         node = self.scene.get(node_key)
         if not node:
@@ -345,7 +345,7 @@ class Treeger(ITreeger):
 
             elif reusibility == ReuseAction.REPLACE:
                 # Replace the sibling node with the new one (stop the sibling process and create below)
-                self._stop_node_service(sibling_node_name)
+                self.deactivate_node(sibling_node_name)
 
             elif reusibility == ReuseAction.FORK:
                 # Fork the sibling node, which means creating a new process for the node but keeping the sibling process running
@@ -407,11 +407,8 @@ class Treeger(ITreeger):
                 self.used_ports.discard(port)
             logger.error(f'Failed to launch node {node_key}: {e}')
             raise
-    
-    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
-        return self._start_node_service(node_key, reusibility)
-    
-    def _stop_node_service(self, node_key: str) -> bool:
+
+    def deactivate_node(self, node_key: str) -> bool:
         if node_key not in self.process_pool:
             logger.warning(f'Node "{node_key}" not found in process pool')
             return False
@@ -431,9 +428,6 @@ class Treeger(ITreeger):
         except Exception as e:
             logger.error(f'Failed to stop node "{node_key}": {e}')
             return False
-
-    def deactivate_node(self, node_key: str) -> bool:
-        return self._stop_node_service(node_key)
     
     def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
         # Check if the node exists in the scene

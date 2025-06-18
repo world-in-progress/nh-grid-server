@@ -1,4 +1,3 @@
-import json
 import c_two as cc
 import pyarrow as pa
 
@@ -35,10 +34,10 @@ class GridSchema:
         }
         
         table = pa.Table.from_pylist([data], schema=arrow_schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> 'GridSchema':
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return GridSchema(
             epsg=row['epsg'],
             bounds=row['bounds'],
@@ -91,10 +90,10 @@ class GridAttribute:
         ])
         
         table = pa.Table.from_pylist([data.__dict__], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
     
     def deserialize(arrow_bytes: bytes) -> 'GridAttribute':
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return GridAttribute(
             deleted=row['deleted'],
             activate=row['activate'],
@@ -123,10 +122,10 @@ class GridInfo:
         }
         
         table = pa.Table.from_pylist([data], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> tuple[int, int]:
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return (
             row['level'],
             row['global_id']
@@ -146,10 +145,10 @@ class PeerGridInfos:
         }
         
         table = pa.Table.from_pylist([data], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(bytes: bytes) -> tuple[int, list[int]]:
-        row = cc.message.deserialize_to_rows(bytes)[0]
+        row = deserialize_to_rows(bytes)[0]
         return (
             row['level'],
             row['global_ids']
@@ -169,10 +168,10 @@ class GridInfos:
             ],
             schema=schema
         )
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> tuple[list[int], list[list[int]]]:
-        table = cc.message.deserialize_to_table(arrow_bytes)
+        table = deserialize_to_table(arrow_bytes)
         levels = table.column('levels').to_pylist()
         global_ids = table.column('global_ids').to_pylist()
         return levels, global_ids
@@ -189,10 +188,10 @@ class GridAttributes:
         }
         
         table = pa.Table.from_pylist([data_dict], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> list[GridAttribute]:
-        table = cc.message.deserialize_to_table(arrow_bytes)
+        table = deserialize_to_table(arrow_bytes)
         
         grid_bytes = table.column('attribute_bytes').to_pylist()[0]
         
@@ -204,10 +203,10 @@ class GridKeys:
         schema = pa.schema([pa.field('keys', pa.string())])
         data = {'keys': keys}
         table = pa.Table.from_pydict(data, schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> list[str | None]:
-        table = cc.message.deserialize_to_table(arrow_bytes)
+        table = deserialize_to_table(arrow_bytes)
         keys = table.column('keys').to_pylist()
         return keys
 
@@ -225,10 +224,10 @@ class GridCenter:
         }
         
         table = pa.Table.from_pylist([data], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> tuple[float, float]:
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return (
             row['lon'],
             row['lat']
@@ -248,10 +247,10 @@ class MultiGridCenters:
         }
         
         table = pa.Table.from_pydict(data, schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> list[tuple[float, float]]:
-        table = cc.message.deserialize_to_table(arrow_bytes)
+        table = deserialize_to_table(arrow_bytes)
         lon = table.column('lon').to_pylist()
         lat = table.column('lat').to_pylist()
         return list(zip(lon, lat))
@@ -264,10 +263,10 @@ class FloatArray:
         ])
         data = {'data': data}
         table = pa.Table.from_pydict(data, schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> list[float]:
-        table = cc.message.deserialize_to_table(arrow_bytes)
+        table = deserialize_to_table(arrow_bytes)
         data = table.column('data').to_pylist()
         return data
 
@@ -283,10 +282,10 @@ class TopoSaveInfo:
         ])
         
         table = pa.Table.from_pylist([info.__dict__], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
     
     def deserialize(arrow_bytes: bytes) -> 'TopoSaveInfo':
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return TopoSaveInfo(
             success=row['success'],
             message=row['message'],
@@ -339,3 +338,26 @@ class ITopo:
         
     def save(self) -> TopoSaveInfo:
         ...
+
+# Helpers ##################################################
+
+def serialize_from_table(table: pa.Table) -> bytes:
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    binary_data = sink.getvalue().to_pybytes()
+    return binary_data
+
+def deserialize_to_table(serialized_data: bytes) -> pa.Table:
+    buffer = pa.py_buffer(serialized_data)
+    with pa.ipc.open_stream(buffer) as reader:
+        table = reader.read_all()
+    return table
+
+def deserialize_to_rows(serialized_data: bytes) -> dict:
+    buffer = pa.py_buffer(serialized_data)
+
+    with pa.ipc.open_stream(buffer) as reader:
+        table = reader.read_all()
+
+    return table.to_pylist()
