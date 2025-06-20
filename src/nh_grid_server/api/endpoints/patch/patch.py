@@ -73,7 +73,13 @@ def create_patch(project_name: str, patch_data: PatchMeta):
                     'meta_file_name': settings.GRID_PATCH_META_FILE_NAME,
                 }
             )
-            # TODO: - feature
+            # - feature
+            BT.instance.mount_node(
+                'feature', f'{node_key}/feature',
+                {
+                    'feature_path': str(project_path / patch_data.name / 'feature'),
+                }
+            )
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to create grid patch: {str(e)}')
