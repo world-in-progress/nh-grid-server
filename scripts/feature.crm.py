@@ -29,4 +29,9 @@ if __name__ == '__main__':
     server = cc.message.Server(tcp_address, crm)
     server.start()
     logger.info('CRM server started at %s', tcp_address)
-    server.wait_for_termination()
+    try:
+        if server.wait_for_termination():
+            server.stop()
+
+    except KeyboardInterrupt:
+        server.stop()

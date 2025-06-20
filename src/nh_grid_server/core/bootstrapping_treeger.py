@@ -20,27 +20,6 @@ logger = logging.getLogger('BSTreeger')
 
 T = TypeVar('T')
 
-class ProxyCRM:
-    def __init__(self, icrm_class: Type[T], client: cc.message.Client):
-        self._wrapped = icrm_class()
-        self._wrapped.client = client
-    
-    def __getattr__(self, name):
-        if hasattr(self._wrapped, name):
-            return getattr(self._wrapped, name)
-        elif hasattr(self, name):
-            return getattr(self, name)
-        else:
-            logger.error(f'Attribute {name} not found in ProxyCRM or wrapped ICRM {self._wrapped.__class__.__name__}')
-            raise AttributeError(f'{name} not found in ProxyCRM or wrapped ICRM {self._wrapped.__class__.__name__}')
-
-    def __del__(self):
-        if hasattr(self._wrapped, 'client'):
-            try:
-                self._wrapped.client.terminate()
-            except Exception as e:
-                logger.warning(f'Failed to terminate client: {e}')
-
 class BootStrappingTreeger:
     instance: ITreeger | 'BootStrappingTreeger' = None
     _lock = threading.Lock()
@@ -124,9 +103,10 @@ class BootStrappingTreeger:
         if self._process is None:
             return
         
-        while cc.message.Client.shutdown(self._tcp_address, process=self._process) is False:
+        while cc.message.Client.shutdown(self._tcp_address) is False:
             logger.info('Waiting for Treeger CRM to shutdown...')
             time.sleep(1)
+        logger.info('Treeger CRM shutdown successfully')
     
     def __getattr__(self, name):
         icrm = ITreeger()
@@ -148,7 +128,8 @@ class BootStrappingTreeger:
                 tcp_address = crm.activate_node(node_key, ReuseAction.FORK)
                 
             client = cc.message.Client(tcp_address)
-            proxy_crm = ProxyCRM(icrm, client)
+            proxy_crm = icrm()
+            proxy_crm.client = client
             yield proxy_crm
             
         finally:

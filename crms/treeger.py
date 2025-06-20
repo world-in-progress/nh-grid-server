@@ -366,9 +366,6 @@ class Treeger(ITreeger):
             if sys.platform != 'win32':
                 # Unix-specific: create new process group
                 kwargs['preexec_fn'] = os.setsid
-            else:
-                # Windows-specific: don't open a new console window
-                kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
             
             # Assmble the command to launch the CRM server
             params = node.launch_params
@@ -417,7 +414,7 @@ class Treeger(ITreeger):
             process_info = self.process_pool[node_key]
             process = process_info.process
             tcp_address = process_info.address
-            if cc.message.Client.shutdown(tcp_address, process=process, timeout=60) is False:
+            if cc.message.Client.shutdown(tcp_address, timeout=60) is False:
                 raise RuntimeError(f'Failed to shutdown node "{node_key}" at {tcp_address}')
                 
             self._release_node_port(node_key)

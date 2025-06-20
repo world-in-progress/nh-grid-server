@@ -55,6 +55,7 @@ class Topo(ITopo):
             subdivide_rules (list[list[int]]): list of subdivision rules per level
             grid_file_path (str, optional): path to .arrow file containing grid data. If provided, grid data will be loaded from this file
         """
+        self.dirty = False
         self.epsg: int = epsg
         self.bounds: list = bounds
         self.first_size: list[float] = first_size
@@ -205,6 +206,7 @@ class Topo(ITopo):
         df.set_index([ATTR_INDEX_KEY], inplace=True)
 
         self.grids = df
+        self.dirty = True
         print(f'Successfully initialized grid data with {num_grids} grids at level 1')
    
     def _get_local_ids(self, level: int, global_ids: np.ndarray) -> np.ndarray:
@@ -354,7 +356,7 @@ class Topo(ITopo):
         filtered_grids[ATTR_MAX_Y] = max_ys
         
         levels, global_ids = _decode_index_batch(filtered_grids.index.values)
-        
+        self.dirty = True
         return [
             GridAttribute(
                 deleted=row[ATTR_DELETED],
