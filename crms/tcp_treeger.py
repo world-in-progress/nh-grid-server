@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import yaml
+import signal
 import socket
 import logging
 import threading
@@ -17,6 +18,7 @@ ROOT_DIR = Path(os.getcwd()).resolve()
 
 @dataclass
 class ProcessInfo():
+    # port: int
     address: str
     start_time: float = 0.0
     scenario_node_name: str = ''
@@ -50,6 +52,10 @@ class Treeger(ITreeger):
         self.meta_path = ROOT_DIR / meta_path
         self.process_pool: dict[str, ProcessInfo] = {}
         self.scene_nodes_in_flight: dict[str, set[str]] = {}  # scenario node name -> set of scene node names
+
+        self._port_lock = threading.Lock()
+        
+        self.used_ports: set[int] = set()
         
         try:
             with open(meta_path, 'r') as f:
@@ -58,6 +64,8 @@ class Treeger(ITreeger):
             self.crm_entry_dict: dict[str, CRMEntry] = {
                 node.name: node for node in self.meta.crm_entries
             }
+            self.max_ports: int = self.meta.configuration.max_ports
+            self.port_range: tuple[int, int] = self.meta.configuration.port_range
 
             # Iterate through the scenario
             self.root = self.meta.scenario
@@ -113,7 +121,7 @@ class Treeger(ITreeger):
         except Exception as e:
             logger.error(f'Failed to initialize treeger from {meta_path}: {e}')
 
-    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
+    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.FORK) -> bool:
         if node_key in self.scene:
             logger.warning(f'Node {node_key} already mounted, skipping')
             return True
@@ -231,9 +239,85 @@ class Treeger(ITreeger):
         except Exception as e:
             logger.error(f'Failed to terminate treeger: {e}')
             return False
+            
+    def _is_port_available(self, port: int) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(('127.0.0.1', port))
+                sock.listen(1)
+            
+            return True
+        
+        except (OSError, socket.error):
+            return False
+    
+    def _find_available_port(self) -> int | None:
+        start_port, end_port = self.port_range
+        for port in range(start_port, end_port + 1):
+            if port not in self.used_ports and self._is_port_available(port):
+                return port
+        
+        for port in range(start_port, end_port + 1):
+            if self._is_port_available(port):
+                self.used_ports.discard(port)
+                return port
+    
+    def _release_node_port(self, node_key: str):
+        if node_key in self.process_pool:
+            process_info = self.process_pool[node_key]
+            if process_info.port:
+                self.used_ports.discard(process_info.port)
+                logger.info(f'Released port {process_info.port} for node {node_key}')
+            
+            # Remove record from process pool and scene node in-flight set
+            del self.process_pool[node_key]
+            self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
+    
+    def _cleanup_finished_processes(self):
+        finished_nodes = []
+        
+        for node_name, node_info in self.process_pool.items():
+            process = node_info.process
+            if process and process.poll() is not None:
+                finished_nodes.append(node_name)
+        
+        for node_name in finished_nodes:
+            self._release_node_port(node_name)
+    
+    def _wait_for_available_slot(self, time_out: float = 30.0) -> bool:
+        start_time = time.time()
+        
+        while len(self.used_ports) >= self.max_ports:
+            if time.time() - start_time > time_out:
+                logger.error('Timeout waiting for available slot')
+                return False
+            
+            logger.info(f'Process pool full ({len(self.used_ports)}/{self.max_ports}), waiting...')
+            time.sleep(1.0)
+            
+            self._cleanup_finished_processes()
+        
+        return True
+    
+    def _try_get_tcp_address(self) -> str:
+        with self._port_lock:
+            if not self._wait_for_available_slot():
+                raise RuntimeError('Unable to allocate port: process pool full and timeout reached')
+            
+            port = self._find_available_port()
+            if port is None:
+                raise RuntimeError(f'No available ports in range {self.port_range}')
+            
+            # TODO: Should use reserved ports?
+            
+            self.used_ports.add(port)
+            address = f'tcp://127.0.0.1:{port}'
+            
+            logger.debug(f'Allocated address {address}')
+            return address
     
     def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
-        
         # Check if the node is valid
         node = self.scene.get(node_key)
         if not node:
@@ -268,7 +352,9 @@ class Treeger(ITreeger):
 
         # Try to allocate an address for the node
         try:
+            # address = self._try_get_tcp_address()
             address = f'memory://{node_key.replace('/', '_')}'
+            # port = int(address.split(':')[-1])
         except Exception as e:
             logger.error(f'Failed to allocate address for node {node_key}: {e}')
             raise
@@ -302,6 +388,7 @@ class Treeger(ITreeger):
             
             # Register the process in the process pool and scene node in-flight set
             self.process_pool[node_key] = ProcessInfo(
+                # port=port,
                 address=address,
                 process=process,
                 start_time=time.time(),
@@ -313,6 +400,8 @@ class Treeger(ITreeger):
             return address
 
         except Exception as e:
+            # if 'port' in locals():
+            #     self.used_ports.discard(port)
             logger.error(f'Failed to launch node {node_key}: {e}')
             raise
 
@@ -326,10 +415,8 @@ class Treeger(ITreeger):
             server_address = process_info.address
             if cc.rpc.Client.shutdown(server_address, timeout=60) is False:
                 raise RuntimeError(f'Failed to shutdown node "{node_key}" at {server_address}')
-            
-            # Remove record from process pool and scene node in-flight set
-            del self.process_pool[node_key]
-            self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
+                
+            self._release_node_port(node_key)
             
             logger.info(f'Successfully stopped node "{node_key}"')
             return True
@@ -356,9 +443,8 @@ class Treeger(ITreeger):
             else:
                 # Process is not running, return None
                 server_address = None
-                # Remove record from process pool and scene node in-flight set
-                del self.process_pool[node_key]
-                self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
+                # Cleanup the process pool entry
+                self._release_node_port(node_key)
         
         # Prepare the node info
         node_info = SceneNodeInfo(
@@ -370,6 +456,8 @@ class Treeger(ITreeger):
         return node_info
 
     def get_process_pool_status(self) -> dict:
+        self._cleanup_finished_processes()
+        
         running_nodes = []
         for node_name, node_info in self.process_pool.items():
             process = node_info.process
@@ -383,5 +471,9 @@ class Treeger(ITreeger):
             })
         
         return {
+            'used_ports': len(self.used_ports),
+            'max_ports': self.max_ports,
+            'available_slots': self.max_ports - len(self.used_ports),
             'nodes': running_nodes,
+            'port_range': self.port_range
         }

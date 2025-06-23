@@ -27,8 +27,8 @@ def check_topo_ready():
     """
     try:
         node_key = f'root/projects/{APP_CONTEXT["current_project"]}/{APP_CONTEXT["current_patch"]}/topo'
-        tcp_address = BT.instance.get_node_info(node_key).tcp_address
-        flag = cc.message.Client.ping(tcp_address)
+        server_address = BT.instance.get_node_info(node_key).server_address
+        flag = cc.rpc.Client.ping(server_address)
 
         return ResourceCRMStatus(
             status='ACTIVATED' if flag else 'DEACTIVATED',

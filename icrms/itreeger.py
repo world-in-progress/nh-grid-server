@@ -13,7 +13,6 @@ class CRMEntry(BaseModel):
     name: str
     icrm: str
     crm_launcher: str
-    tcp_address: str | None = None
 
 class ScenarioNode(BaseModel):
     name: str
@@ -24,9 +23,9 @@ class ScenarioNode(BaseModel):
     node_type: ScenarioNodeType = ScenarioNodeType.Unknown
     
 class TreeConfiguration(BaseModel):
-    max_ports: int
     scene_path: str
-    port_range: tuple[int, int]
+    max_ports: int = 0
+    port_range: tuple[int, int] = (0, 0)
 
 class TreeMeta(BaseModel):
     scenario: ScenarioNode
@@ -43,11 +42,11 @@ class SceneNodeInfo():
     node_key: str
     scenario_node_name: str
     parent_key: str | None = None
-    tcp_address: str | None = None
+    server_address: str | None = None
 
 @cc.icrm
 class ITreeger:
-    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.FORK) -> bool:
+    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
         ...
     
     def unmount_node(self, node_key: str) -> bool:

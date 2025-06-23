@@ -10,7 +10,6 @@ from functools import partial
 from collections import Counter
 from icrms.itopo import ITopo, GridSchema, GridAttribute, TopoSaveInfo
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Const ##############################

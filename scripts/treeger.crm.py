@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Treeger CRM Launcher')
-    parser.add_argument('--tcp_address', type=str, required=True, help='TCP address for treeger crm server')
+    parser.add_argument('--server_address', type=str, required=True, help='Memory address for treeger crm server')
     parser.add_argument('--meta_path', type=str, required=True, help='Treeger meta file path')
     args = parser.parse_args()
     
@@ -23,9 +23,9 @@ if __name__ == '__main__':
     
     # Launch CRM server
     logger.info('Starting Treeger CRM ...')
-    server = cc.message.Server(args.tcp_address, crm)
+    server = cc.rpc.Server(args.server_address, crm)
     server.start()
-    logger.info('Treeger CRM started at %s', args.tcp_address)
+    logger.info('Treeger CRM started at %s', args.server_address)
     try:
         if server.wait_for_termination():
             server.stop()

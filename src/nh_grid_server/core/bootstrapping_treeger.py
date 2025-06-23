@@ -3,7 +3,6 @@ import os
 import sys
 import time
 import yaml
-import signal
 import logging
 import threading
 import subprocess
@@ -15,7 +14,6 @@ from ..core.config import settings
 from icrms.itreeger import ITreeger, TreeMeta, ReuseAction, SceneNodeInfo
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('BSTreeger')
 
 T = TypeVar('T')
@@ -39,10 +37,10 @@ class BootStrappingTreeger:
         
         self._process = None
         self._meta_path = settings.SCENARIO_META_PATH
-        self._tcp_address = settings.TREEGER_TCP_ADDRESS
-        
-        if not self._meta_path or not self._tcp_address:
-            raise ValueError('Treeger meta path and TCP address must be set in settings')
+        self._server_address = settings.TREEGER_SERVER_ADDRESS
+
+        if not self._meta_path or not self._server_address:
+            raise ValueError('Treeger meta path and server address must be set in settings')
 
         try:
             with open(self._meta_path, 'r') as f:
@@ -70,16 +68,13 @@ class BootStrappingTreeger:
         if sys.platform != 'win32':
             # Unix-specific: create new process group
             kwargs['preexec_fn'] = os.setsid
-        else:
-            # Windows-specific: don't open a new console window
-            kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
         
         self._process = subprocess.Popen(
             [
                 sys.executable,
                 self._crm_launcher,
                 '--meta_path', self._meta_path,
-                '--tcp_address', self._tcp_address,
+                '--server_address', self._server_address,
             ],
             **kwargs
         )
@@ -89,11 +84,10 @@ class BootStrappingTreeger:
         
         logger.info('Waiting for Treeger CRM to start...')
         while True:
-            if cc.message.Client.ping(self._tcp_address, timeout=1) is False:
+            if cc.rpc.Client.ping(self._server_address, timeout=1) is False:
                 if time.time() - start_time > timeout:
                     logger.error(f'Timeout waiting for Treeger CRM to start after {timeout} seconds')
                     raise TimeoutError(f'Treeger CRM failed to start within {timeout} seconds')
-                logger.info('Waiting for Treeger CRM to start...')
             else:
                 logger.info('Treeger CRM started successfully')
                 break
@@ -103,7 +97,7 @@ class BootStrappingTreeger:
         if self._process is None:
             return
         
-        while cc.message.Client.shutdown(self._tcp_address) is False:
+        while cc.rpc.Client.shutdown(self._server_address) is False:
             logger.info('Waiting for Treeger CRM to shutdown...')
             time.sleep(1)
         logger.info('Treeger CRM shutdown successfully')
@@ -112,7 +106,7 @@ class BootStrappingTreeger:
         icrm = ITreeger()
         if hasattr(icrm, name):
             def method_wrapper(*args, **kwargs):
-                with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
+                with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
                     remote_method = getattr(crm, name)
                     return remote_method(*args, **kwargs)
             return method_wrapper
@@ -124,10 +118,10 @@ class BootStrappingTreeger:
     def connect(self, node_key: str, icrm: Type[T], deactivate_node_service: bool = False) -> Generator[T, None, None]:
         proxy_crm = None
         try:
-            with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
-                tcp_address = crm.activate_node(node_key, ReuseAction.FORK)
+            with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
+                server_address = crm.activate_node(node_key, ReuseAction.KEEP)
                 
-            client = cc.message.Client(tcp_address)
+            client = cc.rpc.Client(server_address)
             proxy_crm = icrm()
             proxy_crm.client = client
             yield proxy_crm
@@ -136,7 +130,7 @@ class BootStrappingTreeger:
             try:
                 # Terminate the CRM server process
                 if deactivate_node_service:
-                    with cc.compo.runtime.connect_crm(self._tcp_address, ITreeger) as crm:
+                    with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
                         crm.deactivate_node(node_key)
                     
                 # Terminate the client connection

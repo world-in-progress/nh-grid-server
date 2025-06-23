@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     HTTPS_PROXY: str
     
     # Treeger meta configuration
-    TREEGER_TCP_ADDRESS: str = 'tcp://localhost:5555'
+    TREEGER_SERVER_ADDRESS: str = 'memory://gridman_bstreeger'
     SCENARIO_META_PATH: str = str(ROOT_DIR / 'scenario.meta.yaml')
 
     # Patch CRM configuration

@@ -18,10 +18,10 @@ class UploadInfo:
             'file_type': file_type
         }
         table = pa.Table.from_pylist([data], schema=schema)
-        return cc.message.serialize_from_table(table)
+        return serialize_from_table(table)
 
     def deserialize(arrow_bytes: bytes) -> tuple[str, str]:
-        row = cc.message.deserialize_to_rows(arrow_bytes)[0]
+        row = deserialize_to_rows(arrow_bytes)[0]
         return (
             row['file_path'],
             row['file_type'],
@@ -114,3 +114,20 @@ class IFeature:
 
     def get_feature_meta(self) -> list[FeatureProperty]:
         ...
+
+# Helpers ##################################################
+
+def serialize_from_table(table: pa.Table) -> bytes:
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    binary_data = sink.getvalue().to_pybytes()
+    return binary_data
+
+def deserialize_to_rows(serialized_data: bytes) -> dict:
+    buffer = pa.py_buffer(serialized_data)
+
+    with pa.ipc.open_stream(buffer) as reader:
+        table = reader.read_all()
+
+    return table.to_pylist()

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Grid Launcher')
     parser.add_argument('--temp', type=str, default='False', help='Use temporary memory for grid')
-    parser.add_argument('--tcp_address', type=str, required=True, help='TCP address for the server')
+    parser.add_argument('--server_address', type=str, required=True, help='TCP address for the server')
     parser.add_argument('--schema_file_path', type=str, required=True, help='Path to the schema file')
     parser.add_argument('--grid_project_path', type=str, required=True, help='Path to the resource directory of grid project')
     parser.add_argument('--meta_file_name', type=str, required=True,  help='Name of the meta information file of the grid project')
@@ -26,7 +26,7 @@ if __name__ == '__main__':
     # Rename
     temp = args.temp
     ipc_address = 'ipc:///tmp/grid' # default address based on IPC, only can be used in Linux / MacOS
-    tcp_address = args.tcp_address
+    server_address = args.server_address
     schema_file_path = args.schema_file_path
     grid_project_path = args.grid_project_path
     meta_file_name = args.meta_file_name
@@ -73,9 +73,9 @@ if __name__ == '__main__':
     
     # Launch CRM server
     logger.info('Starting Grid Topo CRM...')
-    server = cc.message.Server(tcp_address, crm)
+    server = cc.rpc.Server(server_address, crm)
     server.start()
-    logger.info('Grid Topo CRM started at %s', tcp_address)
+    logger.info('Grid Topo CRM started at %s', server_address)
     try:
         if server.wait_for_termination():
             server.stop()

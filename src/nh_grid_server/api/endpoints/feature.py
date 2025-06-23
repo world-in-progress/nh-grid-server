@@ -11,7 +11,6 @@ from ...schemas.project import ResourceCRMStatus
 from ...schemas.base import BaseResponse
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/feature', tags=['feature / operation'])
@@ -25,8 +24,8 @@ def check_feature_ready():
     """
     try:
         node_key = f'root/projects/{APP_CONTEXT["current_project"]}/{APP_CONTEXT["current_patch"]}/feature'
-        tcp_address = BT.instance.get_node_info(node_key).tcp_address
-        flag = cc.message.Client.ping(tcp_address)
+        tcp_address = BT.instance.get_node_info(node_key).server_address
+        flag = cc.rpc.Client.ping(tcp_address)
 
         return ResourceCRMStatus(
             status='ACTIVATED' if flag else 'DEACTIVATED',

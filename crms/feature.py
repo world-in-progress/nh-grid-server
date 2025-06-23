@@ -9,7 +9,6 @@ from typing import Any
 from osgeo import ogr
 import zipfile
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @cc.iicrm

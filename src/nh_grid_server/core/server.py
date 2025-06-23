@@ -10,7 +10,6 @@ import logging
 server_process: subprocess.Popen | None = None
 feature_process: subprocess.Popen | None = None
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def init_working_directory():
