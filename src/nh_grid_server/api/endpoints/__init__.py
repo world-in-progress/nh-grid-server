@@ -5,6 +5,7 @@ from . import project
 from . import patch
 from . import topo
 from . import feature
+from . import scene
 
 router = APIRouter(prefix='/api', tags=['api'])
 
@@ -13,3 +14,4 @@ router.include_router(project.router)
 router.include_router(patch.router)
 router.include_router(topo.router)
 router.include_router(feature.router)
+router.include_router(scene.router)

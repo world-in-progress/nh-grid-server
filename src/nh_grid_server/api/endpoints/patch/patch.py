@@ -1,13 +1,11 @@
 import json
-import c_two as cc
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
+from ....core.config import settings
 from ....schemas.base import BaseResponse
 from ....core.bootstrapping_treeger import BT
-from ....core.server import set_current_feature
-from ....core.config import settings, APP_CONTEXT
-from ....schemas.project import ProjectMeta, ResourceCRMStatus, PatchMeta
+from ....schemas.project import ProjectMeta, PatchMeta
 
 from icrms.itreeger import ReuseAction
 
@@ -146,35 +144,4 @@ def delete_patch(project_name: str, patch_name: str):
     return BaseResponse(
         success=True,
         message='Patch deleted successfully'
-    )
-
-@router.get('/feature/{project_name}/{patch_name}', response_model=BaseResponse)
-def set_patch_feature(project_name: str, patch_name: str):
-    """
-    Description
-    --
-    Set a specific patch as the current crm server.
-    """
-    
-    # Check if the patch directory exists
-    project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-    patch_dir = project_dir / patch_name
-    if not patch_dir.exists():
-        raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to project ({project_name}) not found')
-
-    try:
-        project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
-        with open(project_meta_file, 'r') as f:
-            data = json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
-    
-    project_meta = ProjectMeta(**data)
-    try:
-        set_current_feature(project_meta, patch_name)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
-    return BaseResponse(
-        success=True,
-        message='Grid patch set successfully'
     )

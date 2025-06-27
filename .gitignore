@@ -184,3 +184,5 @@ ehthumbs.db
 Thumbs.db
 
 resource
+
+*.ignore.yaml

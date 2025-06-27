@@ -1,7 +1,5 @@
 meta:
   configuration:
-    max_ports: 20
-    port_range: [5556, 6555]
     scene_path: resource/scene.yaml
   crm_entries:
     - name: Treeger
@@ -16,16 +14,48 @@ meta:
   scenario:
     name: root
     children:
-      - name: schemas
+      - name: topo
         children:
-          - name: schema
-      - name: projects
-        children:
-          - name: project
+          - name: schemas
             children:
-              - name: patch
+              - name: schema
                 children:
-                  - name: topo
-                    crm: Topo
-                  - name: feature
-                    crm: Feature
+                  - name: patches
+                    children:
+                      - name: patch
+                        crm: Topo
+                  - name: grids
+                    children:
+                      - name: grid
+      - name: dems
+        children:
+          - name: dem
+      - name: lums
+        children:
+          - name: lum
+      - name: vectors
+        children:
+          - name: vector
+            crm: Feature
+      - name: rainfalls
+        children:
+          - name: rainfall
+      - name: solutions
+        children:
+          - name: solution
+            children:
+              - name: actions
+                children:
+                  - name: human_actions
+                    children:
+                      - name: human_action
+                  - name: event_actions
+                    children:
+                      - name: event_action
+                  - name: other_actions
+                    children:
+                      - name: other_action
+      - name: instances
+        children:
+          - name: instance
+      

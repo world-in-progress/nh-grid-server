@@ -38,12 +38,17 @@ class ReuseAction(Enum):
     REPLACE = 2
 
 @dataclass
-class SceneNodeInfo():
+class SceneNodeInfo:
     node_key: str
     scenario_node_name: str
     parent_key: str | None = None
     server_address: str | None = None
 
+class SceneNodeMeta(BaseModel):
+    node_name: str
+    node_degree: int
+    children: list['SceneNodeMeta'] | None = None
+    
 @cc.icrm
 class ITreeger:
     def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
@@ -62,4 +67,7 @@ class ITreeger:
         ...
     
     def get_process_pool_status(self) -> dict:
+        ...
+    
+    def get_scene_node_info(self, node_key: str) -> SceneNodeMeta | None:
         ...

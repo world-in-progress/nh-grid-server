@@ -2,14 +2,13 @@ import os
 import sys
 import time
 import yaml
-import socket
 import logging
 import threading
 import subprocess
 import c_two as cc
 from pathlib import Path
 from dataclasses import dataclass, field
-from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo
+from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +86,7 @@ class Treeger(ITreeger):
                 # Update semantic paths for all children
                 for child in scenario_node.children:
                     child.parent = scenario_node
-                    child.semantic_path = f'{scenario_node.semantic_path}/{child.name}'
+                    child.semantic_path = f'{scenario_node.semantic_path}.{child.name}'
                     scenario_node_stack.append(child)
             
             # Initialize scene
@@ -128,7 +127,7 @@ class Treeger(ITreeger):
             launch_params = {}
         
         # Validate node_key
-        parent_key = '/'.join(node_key.split('/')[:-1])
+        parent_key = '.'.join(node_key.split('.')[:-1])
         parent_node = self.scene.get(parent_key, None)
         if not parent_node:
             raise ValueError(f'Parent node "{parent_key}" not found in scene for node "{node_key}"')
@@ -338,6 +337,33 @@ class Treeger(ITreeger):
             logger.error(f'Failed to stop node "{node_key}": {e}')
             return False
     
+    def get_scene_node_info(self, node_key: str) -> SceneNodeMeta | None:
+        # Check if the node exists in the scene
+        if node_key not in self.scene:
+            return None
+
+        # Get the SceneNode instance
+        scene_node = self.scene[node_key]
+        scene_node_name = scene_node.node_key.split('.')[-1]  # get the last part of the node_key as the name
+        scene_node_degree = len(scene_node.scenario_node.children)
+
+        # Get meta of children nodes
+        children_meta: list[SceneNodeMeta] = []
+        for child in scene_node.children:
+            child_node_name = child.node_key.split('.')[-1]  # get the last part of the node_key as the name
+            child_node_degree = len(child.scenario_node.children)
+            children_meta.append(SceneNodeMeta(
+                node_name=child_node_name,
+                node_degree=child_node_degree,
+                children=None  # do not focus on children meta of children
+            ))
+
+        return SceneNodeMeta(
+            node_name=scene_node_name,
+            node_degree=scene_node_degree,
+            children=children_meta if children_meta else None
+        )
+    
     def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
         # Check if the node exists in the scene
         if node_key not in self.scene:
@@ -347,7 +373,7 @@ class Treeger(ITreeger):
         # Get the SceneNode instance
         scene_node = self.scene[node_key]
         
-        # Get the TCP address of the node if it is running
+        # Get the server address of the node if it is running
         if node_key in self.process_pool:
             process_info = self.process_pool[node_key]
             if process_info.process and process_info.process.poll() is None:
