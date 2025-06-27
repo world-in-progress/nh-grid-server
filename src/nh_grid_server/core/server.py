@@ -14,11 +14,31 @@ def init_working_directory():
     resource_path = Path(os.getcwd()) / 'resource'
     resource_path.mkdir(parents=True, exist_ok=True)
     
-    schemas_path = resource_path / 'schemas'
+    topo_path = resource_path / 'topo'
+    topo_path.mkdir(parents=True, exist_ok=True)
+    
+    schemas_path = topo_path / 'schemas'
     schemas_path.mkdir(parents=True, exist_ok=True)
     
-    projects_path = resource_path / 'projects'
-    projects_path.mkdir(parents=True, exist_ok=True)
+    dems_path = resource_path / 'dems'
+    dems_path.mkdir(parents=True, exist_ok=True)
+    
+    lums_path = resource_path / 'lums'
+    lums_path.mkdir(parents=True, exist_ok=True)
+    
+    vectors_path = resource_path / 'vectors'
+    vectors_path.mkdir(parents=True, exist_ok=True)
+    
+    rainfalls_path = resource_path / 'rainfalls'
+    rainfalls_path.mkdir(parents=True, exist_ok=True)
+    
+    solutions_path = resource_path / 'solutions'
+    solutions_path.mkdir(parents=True, exist_ok=True)
+    
+    instances_path = resource_path / 'instances'
+    instances_path.mkdir(parents=True, exist_ok=True)
+    
+    
 
 def get_server_status():
     global server_process

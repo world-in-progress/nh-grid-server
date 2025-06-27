@@ -19,7 +19,14 @@ async def lifespan(app: FastAPI):
     # await agent_client.connect_to_server(settings.MCP_SERVER_SCRIPT_PATH)
     
     BT()
-    BT.instance.mount_node('schemas', 'root.schemas')
+    BT.instance.mount_node('topo', 'root.topo')
+    BT.instance.mount_node('schemas', 'root.topo.schemas')
+    BT.instance.mount_node('dems', 'root.dems')
+    BT.instance.mount_node('lums', 'root.lums')
+    BT.instance.mount_node('vectors', 'root.vectors')
+    BT.instance.mount_node('rainfalls', 'root.rainfalls')
+    BT.instance.mount_node('solutions', 'root.solutions')
+    BT.instance.mount_node('instances', 'root.instances')
     
     init_working_directory()
     
