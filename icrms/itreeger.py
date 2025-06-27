@@ -69,5 +69,5 @@ class ITreeger:
     def get_process_pool_status(self) -> dict:
         ...
     
-    def get_scene_node_info(self, node_key: str) -> SceneNodeMeta | None:
+    def get_scene_node_info(self, node_key: str, child_start_index: int = 0, child_end_index: int | None = None) -> SceneNodeMeta | None:
         ...

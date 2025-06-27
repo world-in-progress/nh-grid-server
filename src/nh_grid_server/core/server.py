@@ -38,8 +38,6 @@ def init_working_directory():
     instances_path = resource_path / 'instances'
     instances_path.mkdir(parents=True, exist_ok=True)
     
-    
-
 def get_server_status():
     global server_process
     if server_process:
