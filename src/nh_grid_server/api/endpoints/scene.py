@@ -18,7 +18,7 @@ def get_scene_node_info(node_key: str):
     Get information about a specific scene node.
     """
     try:
-        if node_key is '':
+        if node_key is '_':
             node_key = 'root'
         
         meta = BT.instance.get_scene_node_info(node_key)
