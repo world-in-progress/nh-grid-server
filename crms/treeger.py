@@ -355,6 +355,7 @@ class Treeger(ITreeger):
             scene_node = self.scene[node_key]
             scene_node_name = scene_node.node_key.split('.')[-1]  # get the last part of the node_key as the name
             scene_node_degree = len(scene_node.scenario_node.children)
+            scenario_node_name = scene_node.scenario_node.name
             
             if child_start_index < 0:
                 child_start_index = 0
@@ -369,12 +370,14 @@ class Treeger(ITreeger):
                 children_meta.append(SceneNodeMeta(
                     node_name=child_node_name,
                     node_degree=child_node_degree,
+                    scenario_node_name=child.scenario_node.name,
                     children=None  # do not focus on children meta of children
                 ))
 
             return SceneNodeMeta(
                 node_name=scene_node_name,
                 node_degree=scene_node_degree,
+                scenario_node_name=scenario_node_name,
                 children=children_meta if children_meta else None
             )
     
