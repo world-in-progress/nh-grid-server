@@ -54,7 +54,7 @@ def register_schema(data: GridSchema):
         
     # Write the schema to a file
     try:
-        grid_schema_path.mkdir(parents=True, exist_ok=True)
+        grid_schema_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(grid_schema_path, 'w') as f:
             f.write(data.model_dump_json(indent=4))

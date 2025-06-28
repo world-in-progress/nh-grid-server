@@ -25,11 +25,7 @@ def get_scene_node_info(node_key: str, child_start_index: int = 0, child_end_ind
         if meta is None:
             raise HTTPException(status_code=404, detail=f'Scene node with key "{node_key}" not found')
         
-        return SceneNodeMeta(
-            node_name=meta.node_name,
-            node_degree=meta.node_degree,
-            children=meta.children
-        ) 
+        return meta
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get scene node info: {str(e)}')

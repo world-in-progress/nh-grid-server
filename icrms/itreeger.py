@@ -47,6 +47,7 @@ class SceneNodeInfo:
 class SceneNodeMeta(BaseModel):
     node_name: str
     node_degree: int
+    scenario_node_name: str
     children: list['SceneNodeMeta'] | None = None
     
 @cc.icrm
