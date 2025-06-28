@@ -1,7 +1,7 @@
 import json
 from pydantic import BaseModel, field_validator
 
-class ProjectSchema(BaseModel):
+class GridSchema(BaseModel):
     """Schema for project init configuration"""
     name: str # name of the grid schema
     epsg: int # EPSG code for the grid
@@ -23,35 +23,35 @@ class ProjectSchema(BaseModel):
         return v
 
     @staticmethod
-    def parse_file(file_path: str) -> 'ProjectSchema':
+    def parse_file(file_path: str) -> 'GridSchema':
         """Parse a grid schema from a JSON file"""
         with open(file_path, 'r') as f:
             data = json.load(f)
-        return ProjectSchema(**data)
+        return GridSchema(**data)
     
-class ResponseWithProjectSchema(BaseModel):
-    """Response schema for project operations with project schema"""
-    project_schema: ProjectSchema | None
+class ResponseWithGridSchema(BaseModel):
+    """Response schema for grid operations with grid schema"""
+    grid_schema: GridSchema | None
 
-    @field_validator('project_schema')
+    @field_validator('grid_schema')
     def validate_schema(cls, v):
         if v is None:
             return v
-        # Ensure that the schema is an instance of ProjectSchema
-        if not isinstance(v, ProjectSchema):
-            raise ValueError('schema must be an instance of ProjectSchema')
+        # Ensure that the schema is an instance of GridSchema
+        if not isinstance(v, GridSchema):
+            raise ValueError('schema must be an instance of GridSchema')
         return v
 
-class ResponseWithProjectSchemas(BaseModel):
-    """Response schema for project operations with project schemas"""
-    project_schemas: list[ProjectSchema] | None
+class ResponseWithGridSchemas(BaseModel):
+    """Response schema for grid operations with grid schemas"""
+    grid_schemas: list[GridSchema] | None
 
-    @field_validator('project_schemas')
+    @field_validator('grid_schemas')
     def validate_schemas(cls, v):
         if v is None:
             return v
-        # Ensure that the schemas are instances of ProjectSchema
-        if not all(isinstance(schema, ProjectSchema) for schema in v):
-            raise ValueError('schemas must be a list of ProjectSchema instances')
+        # Ensure that the schemas are instances of GridSchema
+        if not all(isinstance(schema, GridSchema) for schema in v):
+            raise ValueError('schemas must be a list of GridSchema instances')
         return v
  

@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 from .base import BaseResponse
-from .schema import ProjectSchema
+from .schema import GridSchema
 from ..core.config import settings, APP_CONTEXT
 from .project import ProjectMeta, PatchMeta
 
@@ -41,7 +41,7 @@ class GridMeta(BaseModel):
             
             with open(schema_file, 'r') as f:
                 schema_data = json.load(f)
-            schema_meta = ProjectSchema(**schema_data)
+            schema_meta = GridSchema(**schema_data)
             epsg = schema_meta.epsg
             grid_info = schema_meta.grid_info
             first_size = grid_info[0]

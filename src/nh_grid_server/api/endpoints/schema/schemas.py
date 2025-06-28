@@ -4,13 +4,13 @@ from fastapi import APIRouter, HTTPException
 
 from ....core.config import settings
 from ....schemas.base import NumberResponse
-from ....schemas.schema import ProjectSchema, ResponseWithProjectSchemas
+from ....schemas.schema import GridSchema, ResponseWithGridSchemas
 
 # APIs for multiple project schemas ################################################
 
 router = APIRouter(prefix='/schemas')
 
-@router.get('/', response_model=ResponseWithProjectSchemas)
+@router.get('/', response_model=ResponseWithGridSchemas)
 def get_schemas(startIndex: int = 0, endIndex: int = None):
     """
     Description
@@ -36,12 +36,12 @@ def get_schemas(startIndex: int = 0, endIndex: int = None):
         for file in schema_files:
             with open(file, 'r') as f:
                 data = json.load(f)
-                schemas.append(ProjectSchema(**data))
+                schemas.append(GridSchema(**data))
         
         # Sort schemas: first by starred (True first), then alphabetically by name within each group
         schemas.sort(key=lambda schema: (not schema.starred, schema.name.lower()))
-        return ResponseWithProjectSchemas(
-            project_schemas=schemas
+        return ResponseWithGridSchemas(
+            grid_schemas=schemas
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to retrieve schemas: {str(e)}')

@@ -35,9 +35,8 @@ class Settings(BaseSettings):
     FEATURE_RESOURCE_POOL_META_FILE_NAME: str = 'resource_pool.meta.json'
     
     # Grid schema related constants
-    GRID_SCHEMA_DIR: str = 'resource/schemas/'
-    GRID_SCHEMA_FILE: str = 'resource/schema.json'
-    
+    GRID_SCHEMA_DIR: str = 'resource/topo/schemas/'
+
     # Grid project related constants
     GRID_PROJECT_DIR: str = 'resource/projects/'
     GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'

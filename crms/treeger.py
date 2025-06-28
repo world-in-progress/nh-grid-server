@@ -273,7 +273,7 @@ class Treeger(ITreeger):
 
             # Try to allocate an address for the node
             try:
-                address = f'memory://{node_key}'
+                address = f'memory://{node_key.replace("/", "_")}'
             except Exception as e:
                 logger.error(f'Failed to allocate address for node {node_key}: {e}')
                 raise
@@ -297,8 +297,9 @@ class Treeger(ITreeger):
                     crm_entry.crm_launcher,
                     '--server_address', address,
                 ]
-                for key, value in params.items():
-                    cmd.extend([f'--{key}', str(value)])
+                if params:
+                    for key, value in params.items():
+                        cmd.extend([f'--{key}', str(value)])
                 
                 process = subprocess.Popen(
                     cmd,
