@@ -10,7 +10,7 @@ from ...schemas.schema import GridSchema, ResponseWithGridSchema
 
 # APIs for single grid schema ##################################################
 
-router = APIRouter(prefix='/schema')
+router = APIRouter(prefix='/schema', tags=['schema-related apis'])
 
 @router.get('/{name}', response_model=ResponseWithGridSchema)
 def get_schema(name: str):

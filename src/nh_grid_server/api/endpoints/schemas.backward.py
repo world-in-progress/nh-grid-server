@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ....core.config import settings
-from ....schemas.base import NumberResponse
-from ....schemas.schema import GridSchema, ResponseWithGridSchemas
+from ...core.config import settings
+from ...schemas.base import NumberResponse
+from ...schemas.schema import GridSchema, ResponseWithGridSchemas
 
 # APIs for multiple project schemas ################################################
 
