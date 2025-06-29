@@ -5,9 +5,9 @@ meta:
     - name: Treeger
       icrm: ITreeger
       crm_launcher: scripts/treeger.crm.py
-    - name: Topo
-      icrm: ITopo
-      crm_launcher: scripts/topo.crm.py
+    - name: Patch
+      icrm: IPatch
+      crm_launcher: scripts/patch.crm.py
     - name: Feature
       icrm: IFeature
       crm_launcher: scripts/feature.crm.py
@@ -23,7 +23,7 @@ meta:
                   - name: patches
                     children:
                       - name: patch
-                        crm: Topo
+                        crm: Patch
                   - name: grids
                     children:
                       - name: grid

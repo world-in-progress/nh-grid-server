@@ -7,14 +7,14 @@ import argparse
 import c_two as cc
 from pathlib import Path
 
-# Import Grid (CRM)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from crms.topo import Topo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 if __name__ == '__main__':
+    from crms.patch import Patch
+    
     parser = argparse.ArgumentParser(description='Grid Launcher')
     parser.add_argument('--temp', type=str, default='False', help='Use temporary memory for grid')
     parser.add_argument('--server_address', type=str, required=True, help='TCP address for the server')
@@ -67,7 +67,7 @@ if __name__ == '__main__':
         grid_file_path = Path(grid_project_path, 'patch.topo.arrow')
     
     # Init CRM
-    crm = Topo(
+    crm = Patch(
         epsg, bounds, first_size, subdivide_rules, grid_file_path
     )
     

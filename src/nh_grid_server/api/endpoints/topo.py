@@ -12,7 +12,7 @@ from ...core.bootstrapping_treeger import BT
 from ...core.config import settings, APP_CONTEXT
 from ...schemas.project import ResourceCRMStatus
 
-from icrms.itopo import ITopo, GridSchema, TopoSaveInfo
+from icrms.ipatch import IPatch, GridSchema, TopoSaveInfo
 
 # APIs for grid topology operations ################################################
 
@@ -92,7 +92,7 @@ def get_current_topo_meta():
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():
     try:
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             levels, global_ids = topo.get_active_grid_infos()
         grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
         
@@ -106,7 +106,7 @@ def activate_grid_info():
 @router.get('/deleted-info', response_class=Response, response_description='Returns deleted grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def deleted_grid_infos():
     try:
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             levels, global_ids = topo.get_deleted_grid_infos()
         grid_infos = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
         
@@ -121,7 +121,7 @@ def deleted_grid_infos():
 def subdivide_grids(grid_info_bytes: bytes = Body(..., description='Grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')):
     try:
         grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             levels, global_ids = topo.subdivide_grids(grid_info.levels, grid_info.global_ids)
         subdivide_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
         
@@ -139,7 +139,7 @@ def merge_grids(grid_info_bytes: bytes = Body(..., description='Grid information
     """
     try:
         grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             levels, global_ids = topo.merge_multi_grids(grid_info.levels, grid_info.global_ids)
             merge_info = grid.MultiGridInfo(levels=levels, global_ids=global_ids)
             
@@ -156,7 +156,7 @@ def delete_grids(grid_info_bytes: bytes = Body(..., description='Grid informatio
     Delete grids based on the provided grid information
     """
     try:
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
             topo.delete_grids(grid_info.levels, grid_info.global_ids)
         
@@ -175,7 +175,7 @@ def recover_grids(grid_info_bytes: bytes = Body(..., description='Grid informati
     """
     try:
         grid_info = grid.MultiGridInfo.from_bytes(grid_info_bytes)
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             topo.recover_multi_grids(grid_info.levels, grid_info.global_ids)
 
         return base.BaseResponse(
@@ -201,7 +201,7 @@ def pick_grids_by_feature(feature_dir: str):
 
     try:
         # Step 1: Prepare target spatial reference
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             schema: GridSchema = topo.get_schema()
         target_epsg: int = schema.epsg
         target_sr = osr.SpatialReference()
@@ -250,7 +250,7 @@ def pick_grids_by_feature(feature_dir: str):
             raise HTTPException(status_code=400, detail=f'No geometries found in feature file: {feature_dir}')
 
         # Step 3: Get centers of all active grids
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             active_levels, active_global_ids = topo.get_active_grid_infos()
             
             if not active_levels or not active_global_ids:
@@ -323,7 +323,7 @@ def save_grids():
     Save the current grid state to a file.
     """
     try:
-        with BT.instance.connect(_get_current_topo_node(), ITopo) as topo:
+        with BT.instance.connect(_get_current_topo_node(), IPatch) as topo:
             result: TopoSaveInfo = topo.save()
             logging.info(f'Grid saved successfully: {result}')
         return base.BaseResponse(

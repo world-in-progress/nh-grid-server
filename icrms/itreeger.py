@@ -21,7 +21,11 @@ class ScenarioNode(BaseModel):
     parent: 'ScenarioNode' = None
     children: list['ScenarioNode'] = []
     node_type: ScenarioNodeType = ScenarioNodeType.Unknown
-    
+
+class ScenarioNodeDescription(BaseModel):
+    semanticPath: str
+    children: list[str] = []
+
 class TreeConfiguration(BaseModel):
     scene_path: str
     max_ports: int = 0
@@ -45,9 +49,8 @@ class SceneNodeInfo:
     server_address: str | None = None
 
 class SceneNodeMeta(BaseModel):
-    node_name: str
-    node_degree: int
-    scenario_node_name: str
+    node_key: str
+    scenario_path: str
     children: list['SceneNodeMeta'] | None = None
     
 @cc.icrm
@@ -71,4 +74,7 @@ class ITreeger:
         ...
     
     def get_scene_node_info(self, node_key: str, child_start_index: int = 0, child_end_index: int | None = None) -> SceneNodeMeta | None:
+        ...
+    
+    def get_scenario_description(self) -> list[ScenarioNodeDescription]:
         ...

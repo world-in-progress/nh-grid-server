@@ -8,10 +8,10 @@ import threading
 import subprocess
 import c_two as cc
 from contextlib import contextmanager
-from typing import Generator, Type, TypeVar, cast
+from typing import Generator, Type, TypeVar
 
 from ..core.config import settings
-from icrms.itreeger import ITreeger, TreeMeta, ReuseAction, SceneNodeInfo
+from icrms.itreeger import ITreeger, TreeMeta, ReuseAction
 
 # Configure logging
 logger = logging.getLogger('BSTreeger')

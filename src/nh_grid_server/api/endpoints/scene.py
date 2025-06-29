@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...core.bootstrapping_treeger import BT
 # from ...schemas.scene import ResponseOfSceneNode
-from icrms.itreeger import SceneNodeMeta
+from icrms.itreeger import SceneNodeMeta, ScenarioNodeDescription
 
 logger = logging.getLogger(__name__)
 
@@ -29,3 +29,17 @@ def get_scene_node_info(node_key: str, child_start_index: int = 0, child_end_ind
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get scene node info: {str(e)}')
+
+@router.get('/scenario', response_model=list[ScenarioNodeDescription])
+def get_scenario_description():
+    """
+    Description
+    --
+    Get the scenario description of the current scene.
+    """
+    try:
+        descriptions = BT.instance.get_scenario_description()
+        return descriptions
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get scenario description: {str(e)}')

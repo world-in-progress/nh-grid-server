@@ -8,7 +8,7 @@ import subprocess
 import c_two as cc
 from pathlib import Path
 from dataclasses import dataclass, field
-from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta
+from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta, ScenarioNodeDescription
 
 logger = logging.getLogger(__name__)
 
@@ -353,33 +353,39 @@ class Treeger(ITreeger):
 
             # Get the SceneNode instance
             scene_node = self.scene[node_key]
-            scene_node_name = scene_node.node_key.split('.')[-1]  # get the last part of the node_key as the name
-            scene_node_degree = len(scene_node.scenario_node.children)
-            scenario_node_name = scene_node.scenario_node.name
+            scenario_node_path = scene_node.scenario_node.semantic_path
             
-            if child_start_index < 0:
-                child_start_index = 0
-            if child_end_index is None:
-                child_end_index = child_start_index + 1 if child_start_index + 1 < len(scene_node.children) else child_start_index
-                
+            child_start_index = min(child_start_index, len(scene_node.children))
+            child_end_index = len(scene_node.children) if child_end_index is None else min(child_end_index, len(scene_node.children))
+
             # Get meta of children nodes
             children_meta: list[SceneNodeMeta] = []
             for child in scene_node.children[child_start_index:child_end_index]:
-                child_node_name = child.node_key.split('.')[-1]  # get the last part of the node_key as the name
-                child_node_degree = len(child.scenario_node.children)
                 children_meta.append(SceneNodeMeta(
-                    node_name=child_node_name,
-                    node_degree=child_node_degree,
-                    scenario_node_name=child.scenario_node.name,
+                    node_key=child.node_key,
+                    scenario_path=child.scenario_node.semantic_path,
                     children=None  # do not focus on children meta of children
                 ))
 
             return SceneNodeMeta(
-                node_name=scene_node_name,
-                node_degree=scene_node_degree,
-                scenario_node_name=scenario_node_name,
+                node_key=scene_node.node_key,
+                scenario_path=scenario_node_path,
                 children=children_meta if children_meta else None
             )
+    
+    def get_scenario_description(self) -> list[ScenarioNodeDescription]:
+        with self.lock:
+            description: list[ScenarioNodeDescription] = []
+            
+            for scenario_node in self.scenario_node_dict.values():
+                description.append(
+                    ScenarioNodeDescription(
+                        semanticPath=scenario_node.semantic_path,
+                        children=[child.name for child in scenario_node.children]
+                    )
+                )
+                
+            return description
     
     def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
         with self.lock:
