@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ....core.config import settings
-from ....schemas.base import BaseResponse
-from ....core.bootstrapping_treeger import BT
-from ....schemas.project import ProjectMeta, PatchMeta
+from ...core.config import settings
+from ...schemas.base import BaseResponse
+from ...core.bootstrapping_treeger import BT
+from ...schemas.project import ProjectMeta, PatchMeta
 
 from icrms.itreeger import ReuseAction
 
