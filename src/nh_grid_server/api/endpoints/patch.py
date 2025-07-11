@@ -1,13 +1,10 @@
-import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ...core.config import settings
 from ...schemas.base import BaseResponse
+from ...schemas.project import PatchMeta
 from ...core.bootstrapping_treeger import BT
-from ...schemas.project import ProjectMeta, PatchMeta
-
-from icrms.itreeger import ReuseAction
 
 # APIs for grid patch ################################################
 
@@ -54,8 +51,8 @@ def create_patch(schema_name: str, patch_data: PatchMeta):
         message='Grid patch created successfully'
     )
 
-@router.put('/{project_name}/{patch_name}', response_model=BaseResponse)
-def update_patch(project_name: str, patch_name: str, data: PatchMeta):
+@router.put('/{schema_name}/{patch_name}', response_model=BaseResponse)
+def update_patch(schema_name: str, patch_name: str, data: PatchMeta):
     """
     Description
     --
@@ -63,13 +60,12 @@ def update_patch(project_name: str, patch_name: str, data: PatchMeta):
     """
 
     # Check if the patch directory exists
-    project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-    patch_dir = project_dir / patch_name
-    if not patch_dir.exists():
-        raise HTTPException(status_code=404, detail=f'Patch ({patch_name}) belonging to project ({project_name}) not found')
+    grid_patch_dir = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_name)
+    if not grid_patch_dir.exists():
+        raise HTTPException(status_code=404, detail=f'Patch ({patch_name}) belonging to schema ({schema_name}) not found')
 
     # Write the updated patch meta information to a file
-    patch_meta_file = patch_dir / settings.GRID_PATCH_META_FILE_NAME
+    patch_meta_file = grid_patch_dir / settings.GRID_PATCH_META_FILE_NAME
     try:
         with open(patch_meta_file, 'w') as f:
             f.write(data.model_dump_json(indent=4))
@@ -81,32 +77,31 @@ def update_patch(project_name: str, patch_name: str, data: PatchMeta):
         message='Grid patch updated successfully'
     )
 
-@router.delete('/{project_name}/{patch_name}', response_model=BaseResponse)
-def delete_patch(project_name: str, patch_name: str):
+@router.delete('/{schema_name}/{patch_name}', response_model=BaseResponse)
+def delete_patch(schema_name: str, patch_name: str):
     """
     Description
     --
-    Delete a patch by specific names of project and patch.
+    Delete a patch by specific name of schema and patch.
     """
 
     # Check if the patch directory exists
-    project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-    patch_dir = project_dir / patch_name
-    if not patch_dir.exists():
+    grid_patch_dir = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_name)
+    if not grid_patch_dir.exists():
         raise HTTPException(status_code=404, detail='Patch not found')
 
     # Delete the patch directory
     try:
-        for item in patch_dir.iterdir():
+        for item in grid_patch_dir.iterdir():
             item.unlink()
-        patch_dir.rmdir()
-        
+        grid_patch_dir.rmdir()
+
         # Unmount the patch node
-        node_key = f'root/projects/{project_name}/{patch_name}'
+        node_key = f'root/schemas/{schema_name}/patches/{patch_name}'
         BT.instance.unmount_node(node_key)
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to delete patch ({patch_name}) belonging to project ({project_name}): {str(e)}')
+        raise HTTPException(status_code=500, detail=f'Failed to delete patch ({patch_name}) belonging to schema ({schema_name}): {str(e)}')
 
     return BaseResponse(
         success=True,
