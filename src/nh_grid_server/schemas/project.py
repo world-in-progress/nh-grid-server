@@ -1,4 +1,3 @@
-from pathlib import Path
 from pydantic import BaseModel, field_validator
 
 class PatchMeta(BaseModel):

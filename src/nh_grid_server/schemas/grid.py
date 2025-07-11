@@ -2,11 +2,11 @@ import json
 import math
 import numpy as np
 from pathlib import Path
-from pydantic import BaseModel, field_validator
+from .patch import PatchMeta
 from .base import BaseResponse
 from .schema import GridSchema
+from pydantic import BaseModel, field_validator
 from ..core.config import settings, APP_CONTEXT
-from .project import ProjectMeta, PatchMeta
 
 class GridMeta(BaseModel):
     """Meta information for a specific grid resource"""

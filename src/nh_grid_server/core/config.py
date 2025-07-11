@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -11,8 +10,8 @@ APP_CONTEXT: dict[str, str] = {
 
 class Settings(BaseSettings):
     # Server configuration
-    APP_NAME: str = 'NH Grid Server'
     DEBUG: bool = True
+    APP_NAME: str = 'NH Grid Server'
     TEMPLATES_DIR: str = str(ROOT_DIR / 'templates/')
     
     # Proxy configuration
@@ -22,27 +21,11 @@ class Settings(BaseSettings):
     # Treeger meta configuration
     TREEGER_SERVER_ADDRESS: str = 'memory://gridman_bstreeger'
     SCENARIO_META_PATH: str = str(ROOT_DIR / 'scenario.meta.yaml')
-
-    # Patch CRM configuration
-    TCP_ADDRESS: str = 'tcp://localhost:5556'
-    CRM_LAUNCHER_FILE: str = 'scripts/grid_crm_launcher.py'
-
-    # Feature CRM configuration
-    FEATURE_TCP_ADDRESS: str = 'tcp://localhost:5556'
-    FEATURE_LAUNCHER_FILE: str = 'scripts/feature_crm_launcher.py'
-
-    # Feature related constants
-    FEATURE_RESOURCE_POOL_META_FILE_NAME: str = 'resource_pool.meta.json'
     
     # Grid schema related constants
     GRID_SCHEMA_DIR: str = 'resource/topo/schemas/'
-
-    # Grid project related constants
-    GRID_PROJECT_DIR: str = 'resource/projects/'
-    GRID_PROJECT_META_FILE_NAME: str = 'project.meta.json'
     
     # Grid-related constants
-    GRID_PATCH_TEMP: str = 'False'
     GRID_PATCH_META_FILE_NAME: str = 'patch.meta.json'
     GRID_PATCH_TOPOLOGY_FILE_NAME: str = 'patch.topo.arrow'
     
