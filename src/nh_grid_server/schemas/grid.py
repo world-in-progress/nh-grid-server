@@ -12,6 +12,7 @@ class GridMeta(BaseModel):
     """Meta information for a specific grid resource"""
     name: str # name of the grid
     epsg: int # EPSG code for the grid
+    description: str = '' # description of the grid, optional
     subdivide_rules: list[tuple[int, int]] # rules for subdividing the grid
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
     
@@ -57,6 +58,7 @@ class GridMeta(BaseModel):
             return GridMeta(
                 name=patch_name,
                 epsg=epsg,
+                description=patch_meta.description,
                 subdivide_rules=subdivide_rules,
                 bounds=bounds
             )
