@@ -20,11 +20,11 @@ def check_patch_ready():
     --
     Check if the patch server is ready.
     """
+    node_key = APP_CONTEXT['current_patch']
     if not node_key:
         raise HTTPException(status_code=404, detail='No patch is currently set')
     
     try:
-        node_key = APP_CONTEXT['current_patch']
         server_address = BT.instance.get_node_info(node_key).server_address
         flag = cc.rpc.Client.ping(server_address)
 
