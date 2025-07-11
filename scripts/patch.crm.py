@@ -16,20 +16,16 @@ if __name__ == '__main__':
     from crms.patch import Patch
     
     parser = argparse.ArgumentParser(description='Grid Launcher')
-    parser.add_argument('--temp', type=str, default='False', help='Use temporary memory for grid')
-    parser.add_argument('--server_address', type=str, required=True, help='TCP address for the server')
+    parser.add_argument('--server_address', type=str, required=True, help='Address for the server')
     parser.add_argument('--schema_file_path', type=str, required=True, help='Path to the schema file')
-    parser.add_argument('--grid_project_path', type=str, required=True, help='Path to the resource directory of grid project')
-    parser.add_argument('--meta_file_name', type=str, required=True,  help='Name of the meta information file of the grid project')
+    parser.add_argument('--grid_patch_path', type=str, required=True, help='Path to the resource directory of grid patch')
     args = parser.parse_args()
     
     # Rename
-    temp = args.temp
     ipc_address = 'ipc:///tmp/grid' # default address based on IPC, only can be used in Linux / MacOS
     server_address = args.server_address
     schema_file_path = args.schema_file_path
-    grid_project_path = args.grid_project_path
-    meta_file_name = args.meta_file_name
+    grid_patch_path = args.grid_patch_path
     
     # Get info from schema file
     schema = json.load(open(schema_file_path, 'r'))
@@ -37,8 +33,8 @@ if __name__ == '__main__':
     grid_info: list[list[float]] = schema['grid_info']
     first_size: list[float] = grid_info[0]
     
-    # Get info from project meta file
-    meta_file = Path(grid_project_path, meta_file_name)
+    # Get info from patch meta file
+    meta_file = Path(grid_patch_path, 'patch.meta.json')
     meta = json.load(open(meta_file, 'r'))
     bounds: list[float] = meta['bounds']
     
@@ -61,10 +57,7 @@ if __name__ == '__main__':
     subdivide_rules.append([1, 1])
     
     # Get grid file path
-    if temp == 'True':
-        grid_file_path = ''
-    else:
-        grid_file_path = Path(grid_project_path, 'patch.topo.arrow')
+    grid_file_path = Path(grid_patch_path, 'patch.topo.arrow')
     
     # Init CRM
     crm = Patch(

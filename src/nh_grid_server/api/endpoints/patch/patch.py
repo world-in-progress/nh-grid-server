@@ -106,7 +106,11 @@ def create_patch(schema_name: str, patch_data: PatchMeta):
             node_key = f'root.topo.schemas.{schema_name}.patches.{patch_data.name}'
 
             # Mount the patch node
-            BT.instance.mount_node('patch', node_key)
+            BT.instance.mount_node('patch', node_key,
+                                   launch_params={
+                                       'schema_file_path': str(grid_schema_path),
+                                       'grid_patch_path': str(grid_patch_path),
+                                   })
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to create grid patch: {str(e)}')
