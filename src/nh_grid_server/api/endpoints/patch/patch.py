@@ -107,7 +107,7 @@ def create_patch(schema_name: str, patch_data: PatchMeta):
 
             # Mount the patch node
             BT.instance.mount_node('patch', node_key,
-                                   launch_params={
+                                   {
                                        'schema_file_path': str(grid_schema_path),
                                        'grid_patch_path': str(grid_patch_path),
                                    })
