@@ -58,4 +58,3 @@ meta:
       - name: instances
         children:
           - name: instance
-      

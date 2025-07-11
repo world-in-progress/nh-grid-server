@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from ....schemas.grid import GridMeta
 from ....schemas.patch import PatchMeta
 from ....schemas.base import BaseResponse
-from ....schemas.crm import ResourceCRMStatus
+from ....schemas.crm import CRMStatus
 from ....core.bootstrapping_treeger import BT
 from ....core.config import settings, APP_CONTEXT
 
@@ -13,7 +13,7 @@ from ....core.config import settings, APP_CONTEXT
 
 router = APIRouter(prefix='')
 
-@router.get('/', response_model=ResourceCRMStatus)
+@router.get('/', response_model=CRMStatus)
 def check_patch_ready():
     """
     Description
@@ -28,7 +28,7 @@ def check_patch_ready():
         server_address = BT.instance.get_node_info(node_key).server_address
         flag = cc.rpc.Client.ping(server_address)
 
-        return ResourceCRMStatus(
+        return CRMStatus(
             status='ACTIVATED' if flag else 'DEACTIVATED',
             is_ready=flag
         )

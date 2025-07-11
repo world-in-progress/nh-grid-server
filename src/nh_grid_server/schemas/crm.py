@@ -1,6 +1,6 @@
 from pydantic import BaseModel, field_validator
 
-class ResourceCRMStatus(BaseModel):
+class CRMStatus(BaseModel):
     """Status of the project"""
     status: str # 'ACTIVATED', 'DEACTIVATED'
     is_ready: bool # True if the project is ready to be used
