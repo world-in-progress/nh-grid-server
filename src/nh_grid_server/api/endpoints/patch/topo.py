@@ -1,5 +1,4 @@
 import logging
-import c_two as cc
 import multiprocessing as mp
 
 from pathlib import Path
@@ -8,86 +7,14 @@ from functools import partial
 from fastapi import APIRouter, Response, HTTPException, Body
 
 from ....schemas import grid, base
+from ....core.config import APP_CONTEXT
 from ....core.bootstrapping_treeger import BT
-from ....core.config import settings, APP_CONTEXT
-from ....schemas.project import ResourceCRMStatus
 
 from icrms.ipatch import IPatch, GridSchema, TopoSaveInfo
 
 # APIs for grid topology operations ################################################
 
 router = APIRouter(prefix='/topo')
-
-@router.get('/', response_model=ResourceCRMStatus)
-def check_topo_ready():
-    """
-    Description
-    --
-    Check if the topo runtime resource is ready.
-    """
-    try:
-        node_key = f'root/projects/{APP_CONTEXT["current_project"]}/{APP_CONTEXT["current_patch"]}/topo'
-        server_address = BT.instance.get_node_info(node_key).server_address
-        flag = cc.rpc.Client.ping(server_address)
-
-        return ResourceCRMStatus(
-            status='ACTIVATED' if flag else 'DEACTIVATED',
-            is_ready=flag
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to check CRM of the topo: {str(e)}')
-
-@router.get('/{project_name}/{patch_name}', response_model=base.BaseResponse)
-def set_patch_topo(project_name: str, patch_name: str):
-    """
-    Description
-    --
-    Set a specific patch topo as the current crm server.
-    """
-    # Check if the patch directory exists
-    project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-    patch_dir = project_dir / patch_name
-    if not patch_dir.exists():
-        raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to project ({project_name}) not found')
-    
-    try:
-        node_key = f'root/projects/{project_name}/{patch_name}/topo'
-        APP_CONTEXT['current_project'] = project_name
-        APP_CONTEXT['current_patch'] = patch_name
-        BT.instance.activate_node(node_key)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
-    return base.BaseResponse(
-        success=True,
-        message='Grid patch set successfully'
-    )
-
-@router.get('/meta/{project_name}/{patch_name}', response_model=grid.GridMeta)
-def get_topo_meta(project_name: str, patch_name: str):
-    """
-    Get grid meta information for a specific patch
-    """
-    try:
-        project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-        patch_dir = project_dir / patch_name
-        if not project_dir.exists() or not patch_dir.exists():
-            raise HTTPException(status_code=404, detail='Project or patch not found')
-
-        return grid.GridMeta.from_patch(project_name, patch_name)
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
-
-@router.get('/meta', response_model=grid.GridMeta)
-def get_current_topo_meta():
-    """
-    Get grid meta information of the current patch
-    """
-    try:
-        return grid.GridMeta.from_context()
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
     
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():
@@ -337,7 +264,7 @@ def save_grids():
 # Helpers ##################################################
 
 def _get_current_topo_node():
-    return f'root/projects/{APP_CONTEXT.get("current_project")}/{APP_CONTEXT.get("current_patch")}/topo'
+    return APP_CONTEXT.get('current_patch')
 
 def _process_grid_batch(batch_data, geometry_wkts):
     # _ is batch_indices

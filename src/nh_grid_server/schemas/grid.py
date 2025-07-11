@@ -16,13 +16,11 @@ class GridMeta(BaseModel):
     bounds: tuple[float, float, float, float] # [ min_lon, min_lat, max_lon, max_lat ]
     
     @staticmethod
-    def from_patch(project_name: str, patch_name: str):
+    def from_patch(schema_name: str, patch_name: str):
         """Create a GridMeta instance from a patch"""
         
-        project_dir = Path(settings.GRID_PROJECT_DIR, project_name)
-        patch_dir = project_dir / patch_name
-        project_meta_file = project_dir / settings.GRID_PROJECT_META_FILE_NAME
-        patch_meta_file = patch_dir / settings.GRID_PATCH_META_FILE_NAME
+        schema_file = Path(settings.GRID_SCHEMA_DIR, schema_name, 'schema.json')
+        patch_meta_file = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_name, settings.GRID_PATCH_META_FILE_NAME)
 
         try:
             # Get bounds from patch meta file
@@ -30,14 +28,6 @@ class GridMeta(BaseModel):
                 patch_data = json.load(f)
             patch_meta = PatchMeta(**patch_data)
             bounds = patch_meta.bounds
-
-            # Get grid info from project meta file
-            with open(project_meta_file, 'r') as f:
-                project_data = json.load(f)
-            project_meta = ProjectMeta(**project_data)
-            
-            schema_name = project_meta.schema_name
-            schema_file = Path(settings.GRID_SCHEMA_DIR, f'{schema_name}.json')
             
             with open(schema_file, 'r') as f:
                 schema_data = json.load(f)

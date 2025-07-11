@@ -1,14 +1,80 @@
+import c_two as cc
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ....core.config import settings
+from ....schemas.grid import GridMeta
+from ....schemas.patch import PatchMeta
 from ....schemas.base import BaseResponse
-from ....schemas.project import PatchMeta
+from ....schemas.crm import ResourceCRMStatus
 from ....core.bootstrapping_treeger import BT
+from ....core.config import settings, APP_CONTEXT
 
 # APIs for grid patch ################################################
 
 router = APIRouter(prefix='')
+
+@router.get('/', response_model=ResourceCRMStatus)
+def check_patch_ready():
+    """
+    Description
+    --
+    Check if the patch server is ready.
+    """
+    if not node_key:
+        raise HTTPException(status_code=404, detail='No patch is currently set')
+    
+    try:
+        node_key = APP_CONTEXT['current_patch']
+        server_address = BT.instance.get_node_info(node_key).server_address
+        flag = cc.rpc.Client.ping(server_address)
+
+        return ResourceCRMStatus(
+            status='ACTIVATED' if flag else 'DEACTIVATED',
+            is_ready=flag
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to check CRM of patch {node_key}: {str(e)}')
+
+
+@router.get('/{schema_name}/{patch_name}', response_model=BaseResponse)
+def set_patch(schema_name: str, patch_name: str):
+    """
+    Description
+    --
+    Set a specific patch as the current crm server.
+    """
+    # Check if the patch directory exists
+    grid_patch_path = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_name)
+    if not grid_patch_path.exists():
+        raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to schema ({schema_name}) not found')
+
+    try:
+        node_key = f'root.topo.schemas.{schema_name}.patches.{patch_name}'
+        APP_CONTEXT['current_patch'] = node_key
+        BT.instance.activate_node(node_key)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
+    return BaseResponse(
+        success=True,
+        message='Grid patch set successfully'
+    )
+
+@router.get('/{schema_name}/{patch_name}/meta', response_model=GridMeta)
+def get_patch_meta(schema_name: str, patch_name: str):
+    """
+    Get grid meta information from a specific patch.
+    """
+    # Check if the patch directory exists
+    grid_patch_path = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_name)
+    if not grid_patch_path.exists():
+        raise HTTPException(status_code=404, detail=f'Grid patch ({patch_name}) belonging to schema ({schema_name}) not found')
+    
+    try:
+        return GridMeta.from_patch(schema_name, patch_name)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f'Failed to read project meta file: {str(e)}')
 
 @router.post('/{schema_name}', response_model=BaseResponse)
 def create_patch(schema_name: str, patch_data: PatchMeta):
@@ -24,7 +90,6 @@ def create_patch(schema_name: str, patch_data: PatchMeta):
         raise HTTPException(status_code=404, detail=f'Grid schema ({schema_name}) not found')
     
     try:
-        
         grid_patch_path = Path(settings.GRID_SCHEMA_DIR, schema_name, 'patches', patch_data.name)
         if grid_patch_path.exists():
             return BaseResponse(
