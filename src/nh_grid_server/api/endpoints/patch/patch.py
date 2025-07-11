@@ -8,7 +8,7 @@ from ....core.bootstrapping_treeger import BT
 
 # APIs for grid patch ################################################
 
-router = APIRouter(prefix='/')
+router = APIRouter(prefix='')
 
 @router.post('/{schema_name}', response_model=BaseResponse)
 def create_patch(schema_name: str, patch_data: PatchMeta):

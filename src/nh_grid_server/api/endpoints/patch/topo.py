@@ -16,7 +16,7 @@ from icrms.ipatch import IPatch, GridSchema, TopoSaveInfo
 
 # APIs for grid topology operations ################################################
 
-router = APIRouter(prefix='/topo', tags=['patch-topo-related apis'])
+router = APIRouter(prefix='/topo')
 
 @router.get('/', response_model=ResourceCRMStatus)
 def check_topo_ready():
