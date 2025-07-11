@@ -7,10 +7,10 @@ from osgeo import ogr, osr
 from functools import partial
 from fastapi import APIRouter, Response, HTTPException, Body
 
-from ...schemas import grid, base
-from ...core.bootstrapping_treeger import BT
-from ...core.config import settings, APP_CONTEXT
-from ...schemas.project import ResourceCRMStatus
+from ....schemas import grid, base
+from ....core.bootstrapping_treeger import BT
+from ....core.config import settings, APP_CONTEXT
+from ....schemas.project import ResourceCRMStatus
 
 from icrms.ipatch import IPatch, GridSchema, TopoSaveInfo
 

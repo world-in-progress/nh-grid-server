@@ -1,14 +1,14 @@
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ...core.config import settings
-from ...schemas.base import BaseResponse
-from ...schemas.project import PatchMeta
-from ...core.bootstrapping_treeger import BT
+from ....core.config import settings
+from ....schemas.base import BaseResponse
+from ....schemas.project import PatchMeta
+from ....core.bootstrapping_treeger import BT
 
 # APIs for grid patch ################################################
 
-router = APIRouter(prefix='/patch')
+router = APIRouter(prefix='/')
 
 @router.post('/{schema_name}', response_model=BaseResponse)
 def create_patch(schema_name: str, patch_data: PatchMeta):
