@@ -208,6 +208,25 @@ class Treeger(ITreeger):
                             logger.error(f'Scenario node {child_row["scenario_node_name"]} not found in tree meta')
             
             return node
+    
+    def _release_crm_process(self, node_key: str):
+        if node_key in self.process_pool:
+            process_info = self.process_pool[node_key]
+            
+            # Remove record from process pool and scene node in-flight set
+            del self.process_pool[node_key]
+            self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
+    
+    def _cleanup_finished_processes(self):
+        finished_nodes = []
+        
+        for node_name, node_info in self.process_pool.items():
+            process = node_info.process
+            if process and process.poll() is not None:
+                finished_nodes.append(node_name)
+        
+        for node_name in finished_nodes:
+            self._release_crm_process(node_name)
 
     def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
         with self.lock:
@@ -291,6 +310,7 @@ class Treeger(ITreeger):
     
     def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
         with self.lock:
+            self._cleanup_finished_processes()
             # Check if the node exists in the db
             if not self._node_exists_in_db(node_key):
                 logger.error(f'Node "{node_key}" not found in scene or database')
@@ -350,6 +370,7 @@ class Treeger(ITreeger):
                     sys.executable,
                     crm_entry.crm_launcher,
                     '--server_address', address,
+                    '--timeout', '10',
                 ]
                 if params:
                     for key, value in params.items():
@@ -368,6 +389,15 @@ class Treeger(ITreeger):
                     scenario_node_name=node.scenario_node.name
                 )
                 self.scene_nodes_in_flight[node.scenario_node.name].add(node_key)
+                
+                # Pin the crm server
+                while True:
+                    if cc.rpc.Client.ping(address, timeout=1):
+                        break
+                    if time.time() - self.process_pool[node_key].start_time > 60:
+                        raise RuntimeError(f'Timeout waiting for node "{node_key}" to start')
+                    
+                    time.sleep(0.1)
 
                 logger.info(f'Successfully launched node "{node_key}" at {address}')
                 return address
@@ -392,6 +422,8 @@ class Treeger(ITreeger):
                 del self.process_pool[node_key]
                 self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
                 
+                # Cleanup finished processes
+                self._cleanup_finished_processes()
                 logger.info(f'Successfully stopped node "{node_key}"')
                 return True
             
@@ -446,9 +478,11 @@ class Treeger(ITreeger):
     
     def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
         with self.lock:
-            # Check if the node exists in the scene
+            self._cleanup_finished_processes()
+            
+            # Check if the node exists in db
             if not self._node_exists_in_db(node_key):
-                logger.warning(f'Node "{node_key}" not found in scene')
+                logger.warning(f'Node "{node_key}" not found in database')
                 return None
             
             # Get the SceneNode instance
@@ -478,6 +512,7 @@ class Treeger(ITreeger):
 
     def get_process_pool_status(self) -> dict:
         with self.lock:
+            self._cleanup_finished_processes()
             running_nodes = []
             for node_name, node_info in self.process_pool.items():
                 process = node_info.process
