@@ -370,7 +370,7 @@ class Treeger(ITreeger):
                     sys.executable,
                     crm_entry.crm_launcher,
                     '--server_address', address,
-                    '--timeout', '10',
+                    '--timeout', '120',
                 ]
                 if params:
                     for key, value in params.items():
