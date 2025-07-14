@@ -2,16 +2,16 @@ import c_two as cc
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
-from ....schemas.grid import GridMeta
-from ....schemas.patch import PatchMeta
-from ....schemas.base import BaseResponse
-from ....schemas.crm import CRMStatus
-from ....core.bootstrapping_treeger import BT
-from ....core.config import settings, APP_CONTEXT
+from ...schemas.grid import GridMeta
+from ...schemas.patch import PatchMeta
+from ...schemas.base import BaseResponse
+from ...schemas.crm import CRMStatus
+from ...core.bootstrapping_treeger import BT
+from ...core.config import settings, APP_CONTEXT
 
 # APIs for grid patch ################################################
 
-router = APIRouter(prefix='')
+router = APIRouter(prefix='/patch', tags=['patch-related apis'])
 
 @router.get('/', response_model=CRMStatus)
 def check_patch_ready():

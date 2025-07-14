@@ -6,15 +6,15 @@ from osgeo import ogr, osr
 from functools import partial
 from fastapi import APIRouter, Response, HTTPException, Body
 
-from ....schemas import grid, base
-from ....core.config import APP_CONTEXT
-from ....core.bootstrapping_treeger import BT
+from ...schemas import grid, base
+from ...core.config import APP_CONTEXT
+from ...core.bootstrapping_treeger import BT
 
 from icrms.ipatch import IPatch, GridSchema, TopoSaveInfo
 
 # APIs for grid topology operations ################################################
 
-router = APIRouter(prefix='/topo')
+router = APIRouter(prefix='/topo', tags=['patch-topo-related apis'])
     
 @router.get('/activate-info', response_class=Response, response_description='Returns active grid information in bytes. Format: [4 bytes for length, followed by level bytes, followed by padding bytes, followed by global id bytes]')
 def activate_grid_info():

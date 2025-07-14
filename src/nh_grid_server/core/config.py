@@ -4,7 +4,6 @@ from pydantic_settings import BaseSettings
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
 APP_CONTEXT: dict[str, str] = {
-    'current_project': None,
     'current_patch': None
 }
 
