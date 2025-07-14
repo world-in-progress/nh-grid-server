@@ -1,6 +1,6 @@
 meta:
   configuration:
-    scene_path: resource/scene.yaml
+    scene_path: resource/scene.db
   crm_entries:
     - name: Treeger
       icrm: ITreeger

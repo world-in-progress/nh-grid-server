@@ -3,14 +3,13 @@ import sys
 import logging
 import argparse
 import c_two as cc
-from pathlib import Path
 
 # Import CRM
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from crms.treeger import Treeger
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)

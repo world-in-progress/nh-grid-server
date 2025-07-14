@@ -2,11 +2,14 @@ import os
 import sys
 import time
 import yaml
+import json
+import sqlite3
 import logging
 import threading
 import subprocess
 import c_two as cc
 from pathlib import Path
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta, ScenarioNodeDescription
 
@@ -92,33 +95,125 @@ class Treeger(ITreeger):
                     child.semantic_path = f'{scenario_node.semantic_path}.{child.name}'
                     scenario_node_stack.append(child)
             
-            # Initialize scene
-            self.scene: dict[str, SceneNode] = {}
-            scene_path = ROOT_DIR / self.meta.configuration.scene_path
-            if scene_path.exists():
-                logger.info(f'Loading scene from {scene_path}')
-                self._deserialize_scene()
-                    
-            else:
-                logger.warning(f'Scene path {scene_path} does not exist, creating a new scene')
-                scene_path.parent.mkdir(parents=True, exist_ok=True)
-            
-                self.scene_node = SceneNode(
-                    node_key='root',
-                    scenario_node=self.root,
-                    launch_params={
-                        'meta_path': meta_path,
-                    }
-                )
-                self.scene['root'] = self.scene_node
+            # Initialize scene db
+            self.scene_db_path = ROOT_DIR / self.meta.configuration.scene_path
+            self._init_db()
             
         except Exception as e:
             logger.error(f'Failed to initialize treeger from {meta_path}: {e}')
+            
+    def _init_db(self):
+        # Create database directory if it doesn't exist
+        self.scene_db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with sqlite3.connect(self.scene_db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS scene_nodes (
+                    node_key TEXT PRIMARY KEY,
+                    scenario_node_name TEXT NOT NULL,
+                    launch_params TEXT,
+                    parent_key TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (parent_key) REFERENCES scene_nodes (node_key) ON DELETE CASCADE
+                )
+            """)
+            
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_parent_key ON scene_nodes(parent_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS ids_scenario_node_name ON scene_nodes(scenario_node_name)")
+            conn.commit()
+    
+    @contextmanager
+    def _connect_db(self):
+        """Context manager for database connection."""
+        conn = sqlite3.connect(self.scene_db_path)
+        conn.row_factory = sqlite3.Row  # enable column access by name
+        try:
+            yield conn
+        finally:
+            conn.close()
+    
+    def _node_exists_in_db(self, node_key: str) -> bool:
+        """Check if a node exists in the database"""
+        with self._connect_db() as conn:
+            cursor = conn.execute("SELECT 1 FROM scene_nodes WHERE node_key = ?", (node_key,))
+            return cursor.fetchone() is not None
+    
+    def _insert_node_to_db(self, node_key: str, scenario_node_name: str, launch_params: dict | None, parent_key: str | None) -> None:
+        """Insert a new node into the database"""
+        with self._connect_db() as conn:
+            conn.execute("""
+                INSERT INTO scene_nodes (node_key, scenario_node_name, launch_params, parent_key)
+                VALUES (?, ?, ?, ?)
+            """, (
+                node_key,
+                scenario_node_name,
+                json.dumps(launch_params) if launch_params else None,
+                parent_key if parent_key else None
+            ))
+            conn.commit()
+    
+    def _get_child_keys_from_db(self, parent_key: str) -> list[str]:
+        """Get all child node keys for a given parent from databse"""
+        with self._connect_db() as conn:
+            cursor = conn.execute("SELECT node_key FROM scene_nodes WHERE parent_key = ?", (parent_key,))
+            return [row['node_key'] for row in cursor.fetchall()]
+    
+    def _delete_node_from_db(self, node_key: str) -> None:
+        """Delete a node from the database"""
+        with self._connect_db() as conn:
+            conn.execute("DELETE FROM scene_nodes WHERE node_key = ?", (node_key,))
+            conn.commit()
+    
+    def _load_node_from_db(self, node_key: str) -> SceneNode | None:
+        """Load a single node from the database"""
+        with self._connect_db() as conn:
+            cursor = conn.execute("""
+                SELECT node_key, scenario_node_name, launch_params, parent_key
+                FROM scene_nodes
+                WHERE node_key = ?
+            """, (node_key,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            
+            scenario_node = self.scenario_node_dict.get(row['scenario_node_name'])
+            if scenario_node is None:
+                logger.error(f'Scenario node {row["scenario_node_name"]} not found in tree meta')
+                return None
+            
+            launch_params = json.loads(row['launch_params']) if row['launch_params'] else {}
+            node = SceneNode(
+                node_key=row['node_key'],
+                scenario_node=scenario_node,
+                launch_params=launch_params
+            )
+            
+            children = self._get_child_keys_from_db(node_key)
+            if children:
+                with self._connect_db() as conn:
+                    cursor = conn.execute("""
+                        SELECT node_key, scenario_node_name FROM scene_nodes WHERE parent_key = ?
+                    """, (node_key,))
+                    
+                    for child_row in cursor.fetchall():
+                        child_scenario_node = self.scenario_node_dict.get(child_row['scenario_node_name'])
+                        if child_scenario_node:
+                            child_node = SceneNode(
+                                node_key=child_row['node_key'],
+                                scenario_node=child_scenario_node,
+                                launch_params={}
+                            )
+                            node.add_child(child_node)
+                        else:
+                            logger.error(f'Scenario node {child_row["scenario_node_name"]} not found in tree meta')
+            
+            return node
 
     def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
         with self.lock:
-            if node_key in self.scene:
-                logger.debug(f'Node {node_key} already mounted, skipping')
+            # Check if node already exists in db
+            if (self._node_exists_in_db(node_key)):
+                logger.info(f'Node {node_key} already mounted, skipping')
                 return True
             
             scenario_node = self.scenario_node_dict.get(scenario_node_name, None)
@@ -132,23 +227,15 @@ class Treeger(ITreeger):
             
             # Validate node_key
             parent_key = '.'.join(node_key.split('.')[:-1])
-            parent_node = self.scene.get(parent_key, None)
-            if not parent_node:
+            if parent_key and not self._node_exists_in_db(parent_key):
                 raise ValueError(f'Parent node "{parent_key}" not found in scene for node "{node_key}"')
 
-            # Create the SceneNode instance
-            node = SceneNode(
-                node_key=node_key,
-                scenario_node=scenario_node,
-                launch_params=launch_params
-            )
-            parent_node.add_child(node)
+            # Insert into db
+            self._insert_node_to_db(node_key, scenario_node_name, launch_params, parent_key if parent_key else None)
             
-            # Add node to the scene
-            self.scene[node_key] = node
             logger.info(f'Successfully mounted node "{node_key}" for scenario "{scenario_node_name}"')
 
-            # If the node should start immediately, activate it
+            # Start service if requested
             if start_service_immediately:
                 try:
                     self.activate_node(node_key, reusibility)
@@ -159,68 +246,35 @@ class Treeger(ITreeger):
             return True
     
     def _unmount_node_recursively(self, node_key: str) -> bool:
-        if node_key not in self.scene:
+        if not self._node_exists_in_db(node_key):
             logger.warning(f'Node "{node_key}" not found in scene, cannot unmount')
             return False
         
-        # Recursively iterate through the children and unmount them
-        for child in self.scene[node_key].children:
-            self._unmount_node_recursively(child.node_key)
+        # Get all child nodes from database
+        child_keys = self._get_child_keys_from_db(node_key)
         
-        # Stop the node service if it's running
+        # Recursively unmount all children
+        for child_key in child_keys:
+            self._unmount_node_recursively(child_key)
+        
+        # Stop the node service if it is running
         if node_key in self.process_pool:
             self.deactivate_node(node_key)
         
-        # Remove the node from the scene
-        node = self.scene[node_key]
-        if node.parent:
-            node.parent.children.remove(node)
-        
-        del self.scene[node_key]
+        # Remove from database
+        self._delete_node_from_db(node_key)
+            
         logger.info(f'Successfully unmounted node {node_key}')
         return True
 
     def unmount_node(self, node_key: str) -> bool:
         with self.lock:
             return self._unmount_node_recursively(node_key)
-
-    def _serialize_scene(self) -> str:
-        scene_data = []
-        for _, scene_node in self.scene.items():
-            scene_data.append({
-                'node_key': scene_node.node_key,
-                'scenario_node_name': scene_node.scenario_node.name,
-                'launch_params': scene_node.launch_params,
-                'parent_key': scene_node.parent.node_key if scene_node.parent else None
-            })
         
         scene_path = ROOT_DIR / self.meta.configuration.scene_path
         with open(scene_path, 'w') as f:
             yaml.dump(scene_data, f, default_flow_style=False)
         logger.info(f'Scene serialized to {scene_path}')
-    
-    def _deserialize_scene(self) -> None:
-        scene_path = ROOT_DIR / self.meta.configuration.scene_path
-        if not scene_path.exists():
-            logger.warning(f'Scene file {scene_path} does not exist, skipping deserialization')
-            return
-        
-        self.scene.clear()
-        with open(scene_path, 'r') as f:
-            scene_data = yaml.safe_load(f)
-            for scene_node_data in scene_data:
-                scene_node = SceneNode(
-                    node_key=scene_node_data['node_key'],
-                    scenario_node=self.scenario_node_dict.get(scene_node_data['scenario_node_name']),
-                    launch_params=scene_node_data['launch_params'],
-                )
-                self.scene[scene_node.node_key] = scene_node
-            
-            for scene_node_data in scene_data:
-                node = self.scene[scene_node_data['node_key']]
-                if scene_node_data['parent_key'] and scene_node_data['parent_key'] in self.scene:
-                    parent_node = self.scene[scene_node_data['parent_key']]
-                    node.add_parent(parent_node)
 
     def terminate(self) -> bool:
         with self.lock:
@@ -230,8 +284,6 @@ class Treeger(ITreeger):
                 
                 logger.info('All nodes stopped successfully')
                 
-                self._serialize_scene()
-                
                 return True
             except Exception as e:
                 logger.error(f'Failed to terminate treeger: {e}')
@@ -239,10 +291,12 @@ class Treeger(ITreeger):
     
     def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
         with self.lock:
-            # Check if the node is valid
-            node = self.scene.get(node_key)
-            if not node:
-                raise ValueError(f'Node {node_key} not found in scene')
+            # Check if the node exists in the db
+            if not self._node_exists_in_db(node_key):
+                logger.error(f'Node "{node_key}" not found in scene or database')
+                raise ValueError(f'Node "{node_key}" not found in scene or database')
+            else:
+                node = self._load_node_from_db(node_key)
             
             # Check if the node can be launched
             if not node.scenario_node.crm:
@@ -348,11 +402,14 @@ class Treeger(ITreeger):
     def get_scene_node_info(self, node_key: str, child_start_index: int = 0, child_end_index: int | None = None) -> SceneNodeMeta | None:
         with self.lock:
             # Check if the node exists in the scene
-            if node_key not in self.scene:
-                return None
+            if self._node_exists_in_db(node_key):
+                # Load the node from database if it exists
+                scene_node = self._load_node_from_db(node_key)
+                if not scene_node:
+                    logger.warning(f'Node "{node_key}" not found in scene or database')
+                    return None
 
             # Get the SceneNode instance
-            scene_node = self.scene[node_key]
             scenario_node_path = scene_node.scenario_node.semantic_path
             
             child_start_index = min(child_start_index, len(scene_node.children))
@@ -390,12 +447,12 @@ class Treeger(ITreeger):
     def get_node_info(self, node_key: str) -> SceneNodeInfo | None:
         with self.lock:
             # Check if the node exists in the scene
-            if node_key not in self.scene:
+            if not self._node_exists_in_db(node_key):
                 logger.warning(f'Node "{node_key}" not found in scene')
                 return None
             
             # Get the SceneNode instance
-            scene_node = self.scene[node_key]
+            scene_node = self._load_node_from_db(node_key)
             
             # Get the server address of the node if it is running
             if node_key in self.process_pool:
