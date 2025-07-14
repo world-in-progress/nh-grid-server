@@ -52,16 +52,26 @@ class SceneNodeMeta(BaseModel):
     node_key: str
     scenario_path: str
     children: list['SceneNodeMeta'] | None = None
+
+class CRMDuration(Enum):
+    Much_Short = '5'
+    Very_Short = '10'
+    Short = '30'
+    Medium = '60'
+    Long = '120'
+    Very_Long = '300'
+    Much_Long = '600'
+    Forever = '0'
     
 @cc.icrm
 class ITreeger:
-    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
+    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None) -> None:
         ...
     
     def unmount_node(self, node_key: str) -> bool:
         ...
         
-    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
+    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE, duration: CRMDuration = CRMDuration.Medium) -> str:
         ...
         
     def deactivate_node(self, node_key: str) -> bool:

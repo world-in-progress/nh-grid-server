@@ -6,6 +6,7 @@ from ...schemas.grid import GridMeta
 from ...schemas.patch import PatchMeta
 from ...schemas.base import BaseResponse
 from ...schemas.crm import CRMStatus
+from icrms.itreeger import ReuseAction, CRMDuration
 from ...core.bootstrapping_treeger import BT
 from ...core.config import settings, APP_CONTEXT
 
@@ -52,7 +53,7 @@ def set_patch(schema_name: str, patch_name: str):
     try:
         node_key = f'root.topo.schemas.{schema_name}.patches.{patch_name}'
         APP_CONTEXT['current_patch'] = node_key
-        BT.instance.activate_node(node_key)
+        BT.instance.activate_node(node_key, ReuseAction.REPLACE, CRMDuration.Much_Long)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')

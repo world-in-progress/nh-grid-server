@@ -11,7 +11,7 @@ import c_two as cc
 from pathlib import Path
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta, ScenarioNodeDescription
+from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta, ScenarioNodeDescription, CRMDuration
 
 logger = logging.getLogger(__name__)
 
@@ -228,12 +228,12 @@ class Treeger(ITreeger):
         for node_name in finished_nodes:
             self._release_crm_process(node_name)
 
-    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None, start_service_immediately: bool = False, reusibility: ReuseAction = ReuseAction.REPLACE) -> bool:
+    def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None) -> None:
         with self.lock:
             # Check if node already exists in db
             if (self._node_exists_in_db(node_key)):
                 logger.info(f'Node {node_key} already mounted, skipping')
-                return True
+                return
             
             scenario_node = self.scenario_node_dict.get(scenario_node_name, None)
             if scenario_node is None:
@@ -253,16 +253,6 @@ class Treeger(ITreeger):
             self._insert_node_to_db(node_key, scenario_node_name, launch_params, parent_key if parent_key else None)
             
             logger.info(f'Successfully mounted node "{node_key}" for scenario "{scenario_node_name}"')
-
-            # Start service if requested
-            if start_service_immediately:
-                try:
-                    self.activate_node(node_key, reusibility)
-                except Exception as e:
-                    logger.error(f'Failed to activate node "{node_key}": {e}')
-                    return False
-            
-            return True
     
     def _unmount_node_recursively(self, node_key: str) -> bool:
         if not self._node_exists_in_db(node_key):
@@ -308,7 +298,7 @@ class Treeger(ITreeger):
                 logger.error(f'Failed to terminate treeger: {e}')
                 return False
     
-    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE) -> str:
+    def activate_node(self, node_key: str, reusibility: ReuseAction = ReuseAction.REPLACE, duration: CRMDuration = CRMDuration.Medium) -> str:
         with self.lock:
             self._cleanup_finished_processes()
             # Check if the node exists in the db
@@ -370,7 +360,7 @@ class Treeger(ITreeger):
                     sys.executable,
                     crm_entry.crm_launcher,
                     '--server_address', address,
-                    '--timeout', '120',
+                    '--timeout', str(duration.value),
                 ]
                 if params:
                     for key, value in params.items():
@@ -417,7 +407,12 @@ class Treeger(ITreeger):
                 server_address = process_info.address
                 if cc.rpc.Client.shutdown(server_address, timeout=60) is False:
                     raise RuntimeError(f'Failed to shutdown node "{node_key}" at {server_address}')
-                
+                else:
+                    process = process_info.process
+                    if process and process.poll() is None:
+                        process.terminate()
+                        process.wait()
+
                 # Remove record from process pool and scene node in-flight set
                 del self.process_pool[node_key]
                 self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
@@ -487,6 +482,9 @@ class Treeger(ITreeger):
             
             # Get the SceneNode instance
             scene_node = self._load_node_from_db(node_key)
+        
+            # Initialize server_address to None by default
+            server_address = None
             
             # Get the server address of the node if it is running
             if node_key in self.process_pool:
@@ -495,8 +493,6 @@ class Treeger(ITreeger):
                     # Process is running, return its address
                     server_address = process_info.address
                 else:
-                    # Process is not running, return None
-                    server_address = None
                     # Remove record from process pool and scene node in-flight set
                     del self.process_pool[node_key]
                     self.scene_nodes_in_flight[process_info.scenario_node_name].remove(node_key)
