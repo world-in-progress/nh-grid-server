@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import yaml
+import shutil
 import logging
 import threading
 import subprocess
@@ -101,6 +102,14 @@ class BootStrappingTreeger:
             logger.info('Waiting for Treeger CRM to shutdown...')
             time.sleep(1)
         logger.info('Treeger CRM shutdown successfully')
+        
+        # Remove memory temp directory if it exists
+        if settings.MEMORY_TEMP_DIR and os.path.exists(settings.MEMORY_TEMP_DIR):
+            try:
+                shutil.rmtree(settings.MEMORY_TEMP_DIR)
+                logger.info(f'Successfully removed memory temp directory: {settings.MEMORY_TEMP_DIR}')
+            except OSError as e:
+                logger.error(f'Failed to remove memory temp directory: {e}')
     
     def __getattr__(self, name):
         icrm = ITreeger()

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     APP_NAME: str = 'NH Grid Server'
     TEMPLATES_DIR: str = str(ROOT_DIR / 'templates/')
     
+    # Memory temp directory
+    MEMORY_TEMP_DIR: str | None = None
+    
     # Proxy configuration
     HTTP_PROXY: str
     HTTPS_PROXY: str
