@@ -54,6 +54,7 @@ class SceneNodeMeta(BaseModel):
     children: list['SceneNodeMeta'] | None = None
 
 class CRMDuration(Enum):
+    Once = '0'
     Much_Short = '5'
     Very_Short = '10'
     Short = '30'
@@ -61,7 +62,7 @@ class CRMDuration(Enum):
     Long = '120'
     Very_Long = '300'
     Much_Long = '600'
-    Forever = '0'
+    Forever = '-1'
     
 @cc.icrm
 class ITreeger:

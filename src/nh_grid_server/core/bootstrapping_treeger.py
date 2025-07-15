@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from typing import Generator, Type, TypeVar
 
 from ..core.config import settings
-from crms.treeger import ITreeger, Treeger, TreeMeta, ReuseAction
+from crms.treeger import ITreeger, Treeger, TreeMeta, ReuseAction, CRMDuration
 
 # Configure logging
 logger = logging.getLogger('BSTreeger')
@@ -108,11 +108,11 @@ class BootStrappingTreeger:
             raise AttributeError(f'{name} not found in ITreeger')
         
     @contextmanager
-    def connect(self, node_key: str, icrm: Type[T], deactivate_node_service: bool = False) -> Generator[T, None, None]:
+    def connect(self, node_key: str, icrm: Type[T], duration: CRMDuration = CRMDuration.Medium) -> Generator[T, None, None]:
         proxy_crm = None
         try:
             with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
-                server_address = crm.activate_node(node_key, ReuseAction.KEEP)
+                server_address = crm.activate_node(node_key, ReuseAction.KEEP, duration)
                 
             client = cc.rpc.Client(server_address)
             proxy_crm = icrm()
@@ -122,7 +122,7 @@ class BootStrappingTreeger:
         finally:
             try:
                 # Terminate the CRM server process
-                if deactivate_node_service:
+                if duration == CRMDuration.Once:
                     with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
                         crm.deactivate_node(node_key)
                     

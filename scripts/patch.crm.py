@@ -71,7 +71,7 @@ if __name__ == '__main__':
     server.start()
     logger.info('Grid Patch CRM started at %s', server_address)
     try:
-        if server.wait_for_termination(None if args.timeout == 0 else args.timeout):
+        if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else args.timeout):
             logger.info('Timeout reached, terminating Grid Patch CRM...')
             server.stop()
     except KeyboardInterrupt:
