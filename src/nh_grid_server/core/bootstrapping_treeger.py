@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from typing import Generator, Type, TypeVar
 
 from ..core.config import settings
-from icrms.itreeger import ITreeger, TreeMeta, ReuseAction
+from crms.treeger import ITreeger, Treeger, TreeMeta, ReuseAction
 
 # Configure logging
 logger = logging.getLogger('BSTreeger')
@@ -46,9 +46,10 @@ class BootStrappingTreeger:
             except OSError as e:
                 logger.error(f'Failed to remove memory temp directory: {e}')
         
-        self._process = None
         self._meta_path = settings.SCENARIO_META_PATH
         self._server_address = settings.TREEGER_SERVER_ADDRESS
+        
+        self._crm_server = cc.rpc.Server(self._server_address, Treeger(self._meta_path))
 
         if not self._meta_path or not self._server_address:
             raise ValueError('Treeger meta path and server address must be set in settings')
@@ -74,21 +75,7 @@ class BootStrappingTreeger:
             raise
         
     def _bootstrap(self):
-        # Platform-specific subprocess arguments
-        kwargs = {}
-        if sys.platform != 'win32':
-            # Unix-specific: create new process group
-            kwargs['preexec_fn'] = os.setsid
-        
-        self._process = subprocess.Popen(
-            [
-                sys.executable,
-                self._crm_launcher,
-                '--meta_path', self._meta_path,
-                '--server_address', self._server_address,
-            ],
-            **kwargs
-        )
+        self._crm_server.start()
         
         start_time = time.time()
         timeout = 60
@@ -104,12 +91,7 @@ class BootStrappingTreeger:
                 break
     
     def terminate(self):
-        # Terminate the CRM process
-        if self._process is None:
-            return
-        
         while cc.rpc.Client.shutdown(self._server_address) is False:
-            logger.info('Waiting for Treeger CRM to shutdown...')
             time.sleep(1)
         logger.info('Treeger CRM shutdown successfully')
     
