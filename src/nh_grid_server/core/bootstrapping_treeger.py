@@ -24,7 +24,6 @@ class BootStrappingTreeger:
     _lock = threading.Lock()
     
     def __new__(cls):
-
         if cls.instance is None:
             with cls._lock:
                 if cls.instance is None:
@@ -35,6 +34,17 @@ class BootStrappingTreeger:
     def __init__(self):
         if getattr(self, '_initialized', False):
             return
+        
+        # Pre-remove memory temp directory if it exists
+        if (
+            settings.MEMORY_TEMP_DIR 
+            and settings.PRE_REMOVE_MEMORY_TEMP_DIR
+            and os.path.exists(settings.MEMORY_TEMP_DIR)
+            ):
+            try:
+                shutil.rmtree(settings.MEMORY_TEMP_DIR)
+            except OSError as e:
+                logger.error(f'Failed to remove memory temp directory: {e}')
         
         self._process = None
         self._meta_path = settings.SCENARIO_META_PATH
@@ -102,14 +112,6 @@ class BootStrappingTreeger:
             logger.info('Waiting for Treeger CRM to shutdown...')
             time.sleep(1)
         logger.info('Treeger CRM shutdown successfully')
-        
-        # Remove memory temp directory if it exists
-        # if settings.MEMORY_TEMP_DIR and os.path.exists(settings.MEMORY_TEMP_DIR):
-        #     try:
-        #         shutil.rmtree(settings.MEMORY_TEMP_DIR)
-        #         logger.info(f'Successfully removed memory temp directory: {settings.MEMORY_TEMP_DIR}')
-        #     except OSError as e:
-        #         logger.error(f'Failed to remove memory temp directory: {e}')
     
     def __getattr__(self, name):
         icrm = ITreeger()

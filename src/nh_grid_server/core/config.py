@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # Memory temp directory
     MEMORY_TEMP_DIR: str | None = None
+    PRE_REMOVE_MEMORY_TEMP_DIR: bool = False
     
     # Proxy configuration
     HTTP_PROXY: str
