@@ -167,7 +167,7 @@ def delete_patch(schema_name: str, patch_name: str):
         grid_patch_dir.rmdir()
 
         # Unmount the patch node
-        node_key = f'root/schemas/{schema_name}/patches/{patch_name}'
+        node_key = f'root.topo.schemas.{schema_name}.patches.{patch_name}'
         BT.instance.unmount_node(node_key)
         
     except Exception as e:
