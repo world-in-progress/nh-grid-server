@@ -311,6 +311,9 @@ class IPatch:
     
     def get_parents(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
+        
+    def get_status(self, level: int, global_id: int) -> int:
+        ...
 
     def get_grid_infos(self, level: int, global_ids: list[int]) -> list[GridAttribute]:
         ...

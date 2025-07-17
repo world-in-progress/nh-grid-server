@@ -1,9 +1,12 @@
 import os
+import math
+import json
 import logging
 import c_two as cc
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+from pathlib import Path
 from enum import IntEnum
 from typing import Callable
 import pyarrow.parquet as pq
@@ -55,22 +58,51 @@ class Patch(IPatch):
     The Grid Resource.  
     Grid is a 2D grid system that can be subdivided into smaller grids by pre-declared subdivide rules.  
     """
-    def __init__(self, epsg: int, bounds: list, first_size: list[float], subdivide_rules: list[list[int]], grid_file_path: str = ''):
+    def __init__(self, schema_file_path: str, grid_patch_path: str):
         """Method to initialize Grid
 
         Args:
-            epsg (int): epsg code of the grid
-            bounds (list): bounding box of the grid (organized as [min_x, min_y, max_x, max_y])
-            first_size (list[float]): [width, height] of the first level grid
-            subdivide_rules (list[list[int]]): list of subdivision rules per level
-            grid_file_path (str, optional): path to .parquet file containing grid data. If provided, grid data will be loaded from this file
+            schema_file_path (str): Path to the schema file
+            grid_patch_path (str): Path to the resource directory of grid patch
         """
+        
+        # Get info from schema file
+        schema = json.load(open(schema_file_path, 'r'))
+        epsg: int = schema['epsg']
+        grid_info: list[list[float]] = schema['grid_info']
+        first_size: list[float] = grid_info[0]
+        
+        # Get info from patch meta file
+        meta_file = Path(grid_patch_path, 'patch.meta.json')
+        meta = json.load(open(meta_file, 'r'))
+        bounds: list[float] = meta['bounds']
+        
+        # Calculate subdivide rules
+        subdivide_rules: list[list[int]] = [
+            [
+                int(math.ceil((bounds[2] - bounds[0]) / first_size[0])),
+                int(math.ceil((bounds[3] - bounds[1]) / first_size[1])),
+            ]
+        ]
+        for i in range(len(grid_info) - 1):
+            level_a = grid_info[i]
+            level_b = grid_info[i + 1]
+            subdivide_rules.append(
+                [
+                    int(level_a[0] / level_b[0]),
+                    int(level_a[1] / level_b[1]),
+                ]
+            )
+        subdivide_rules.append([1, 1])
+        
+        # Initialize attributes
         self.dirty = False
         self.epsg: int = epsg
+        self.grid_info = grid_info
         self.bounds: list = bounds
         self.first_size: list[float] = first_size
         self.subdivide_rules: list[list[int]] = subdivide_rules
-        self.grid_file_path = grid_file_path if grid_file_path != '' else None
+        self.grid_file_path = Path(grid_patch_path, 'patch.topo.parquet')
         if self.grid_file_path:
             base, ext = os.path.splitext(self.grid_file_path)
             if base.endswith('.topo'):
@@ -115,7 +147,7 @@ class Patch(IPatch):
         }
         
         # Load from Parquet file if file exists
-        if grid_file_path and os.path.exists(grid_file_path):
+        if self.grid_file_path.exists():
             try:
                 # Load grid data from Parquet file
                 self._load_grid_from_file()
@@ -334,6 +366,16 @@ class Patch(IPatch):
         local_y = global_ids // total_width
         return (((local_y % sub_height) * sub_width) + (local_x % sub_width))
     
+    def get_local_id(self, level: int, global_id: int) -> int:
+        if level == 0:
+            return global_id
+        total_width = self.level_info[level]['width']
+        sub_width = self.subdivide_rules[level - 1][0]
+        sub_height = self.subdivide_rules[level - 1][1]
+        local_x = global_id % total_width
+        local_y = global_id // total_width
+        return (((local_y % sub_height) * sub_width) + (local_x % sub_width))
+    
     def _get_parent_global_id(self, level: int, global_id: int) -> int:
         """Method to get parent global id
         Args:
@@ -375,7 +417,7 @@ class Patch(IPatch):
         max_ys = bbox[1] + (bbox[3] - bbox[1]) * (global_ys + 1) / height
         return (min_xs, min_ys, max_xs, max_ys)
 
-    def _get_grid_children_global_ids(self, level: int, global_id: int) -> list[int] | None:
+    def get_children_global_ids(self, level: int, global_id: int) -> list[int] | None:
         if (level < 0) or (level >= len(self.level_info)):
             return None
         
@@ -433,6 +475,21 @@ class Patch(IPatch):
             return ([], [])
         
         return tuple(map(list, zip(*parent_set)))
+    
+    def get_status(self, index: int) -> int:
+        """Method to get grid status for provided grid
+        Args:
+            index (int): index key of provided grid, encoded by _encode_index(level, global_id)
+        Returns:
+            int: grid status, 0b00 for not deleted, 0b01 for deleted, 0b10 for activated, 0b11 for invalid grid
+        """
+        try: 
+            is_deleted = self.grids.at[index, ATTR_DELETED]
+            is_activate = self.grids.at[index, ATTR_ACTIVATE]
+            
+            return (is_deleted | (is_activate << 1))
+        except KeyError:
+            return 0b11 # invalid grid
 
     def get_grid_infos(self, level: int, global_ids: list[int]) -> list[GridAttribute]:
         """Method to get all attributes for provided grids having same level
@@ -445,21 +502,23 @@ class Patch(IPatch):
             grid_infos (list[GridAttribute]): grid infos organized by GridAttribute objects with attributes: 
             level, global_id, local_id, type, elevation, deleted, activate, min_x, min_y, max_x, max_y
         """
-        index_keys = [(level, global_id) for global_id in global_ids]
+        index_keys = _encode_index_batch(np.array([level] * len(global_ids), dtype=np.uint8), np.array(global_ids, dtype=np.uint32))
+        # index_keys = [(level, global_id) for global_id in global_ids]
         filtered_grids = self.grids.loc[self.grids.index.isin(index_keys)]
+        logger.info('Filtered grids: %s', filtered_grids)
         if filtered_grids.empty:
             return []
         
-        global_ids_np = filtered_grids[ATTR_GLOBAL_ID].to_numpy()
-        local_ids = self._get_local_ids(level, global_ids_np)
-        min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, global_ids_np)
+        # global_ids_np = filtered_grids[ATTR_GLOBAL_ID].to_numpy()
+        # local_ids = self._get_local_ids(level, global_ids_np)
+        # min_xs, min_ys, max_xs, max_ys = self._get_coordinates(level, global_ids_np)
         
-        filtered_grids = filtered_grids.copy()
-        filtered_grids[ATTR_LOCAL_ID] = local_ids
-        filtered_grids[ATTR_MIN_X] = min_xs
-        filtered_grids[ATTR_MIN_Y] = min_ys
-        filtered_grids[ATTR_MAX_X] = max_xs
-        filtered_grids[ATTR_MAX_Y] = max_ys
+        # filtered_grids = filtered_grids.copy()
+        # filtered_grids[ATTR_LOCAL_ID] = local_ids
+        # filtered_grids[ATTR_MIN_X] = min_xs
+        # filtered_grids[ATTR_MIN_Y] = min_ys
+        # filtered_grids[ATTR_MAX_X] = max_xs
+        # filtered_grids[ATTR_MAX_Y] = max_ys
         
         levels, global_ids = _decode_index_batch(filtered_grids.index.values)
         self.dirty = True
@@ -467,15 +526,15 @@ class Patch(IPatch):
             GridAttribute(
                 deleted=row[ATTR_DELETED],
                 activate=row[ATTR_ACTIVATE],
-                type=0,
+                # type=0,
                 level=levels[i],
                 global_id=global_ids[i],
-                local_id=row[ATTR_LOCAL_ID],
-                elevation=-9999.9,
-                min_x=row[ATTR_MIN_X],
-                min_y=row[ATTR_MIN_Y],
-                max_x=row[ATTR_MAX_X],
-                max_y=row[ATTR_MAX_Y]
+                # local_id=row[ATTR_LOCAL_ID],
+                # elevation=-9999.9,
+                # min_x=row[ATTR_MIN_X],
+                # min_y=row[ATTR_MIN_Y],
+                # max_x=row[ATTR_MAX_X],
+                # max_y=row[ATTR_MAX_Y]
             )
             for i, (_, row) in enumerate(filtered_grids.iterrows())
         ]
@@ -526,7 +585,7 @@ class Patch(IPatch):
         child_index = 0
         for encoded_idx in valid_parents.index:
             level, global_id = _decode_index(encoded_idx)
-            child_global_ids = self._get_grid_children_global_ids(level, global_id)
+            child_global_ids = self.get_children_global_ids(level, global_id)
             if not child_global_ids:
                 continue
             
@@ -921,7 +980,7 @@ class Patch(IPatch):
         try:
             return toggle_map[code]
         except KeyError:
-            print("Invalid edge code.")
+            print('Invalid edge code.')
             return EDGE_CODE_INVALID
 
     def _update_grid_neighbour(self, grid_level: int, grid_global_id: int, neighbour_level: int, neighbour_global_id: int, edge_code: EdgeCode):
