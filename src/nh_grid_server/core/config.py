@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     CORS_METHODS: list[str] = ['*']
     CORS_CREDENTIALS: bool = True
 
+    # Solution related constants
+    SOLUTION_DIR: str = 'resource/solutions/'
+    SERVER_PORT: int = 8000
+
     class Config:
         env_file = '.env'
 

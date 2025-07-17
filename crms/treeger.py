@@ -364,7 +364,14 @@ class Treeger(ITreeger):
                 ]
                 if params:
                     for key, value in params.items():
-                        cmd.extend([f'--{key}', str(value)])
+                        if isinstance(value, dict):
+                            json_str = json.dumps(value, ensure_ascii=False)
+                            if sys.platform == 'win32':
+                                cmd.extend([f'--{key}', json_str])
+                            else:
+                                cmd.extend([f'--{key}', f"'{json_str}'"])
+                        else:
+                            cmd.extend([f'--{key}', str(value)])
                 
                 process = subprocess.Popen(
                     cmd,

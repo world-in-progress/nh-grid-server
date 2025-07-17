@@ -11,6 +11,9 @@ meta:
     - name: Feature
       icrm: IFeature
       crm_launcher: scripts/feature.crm.py
+    - name: Solution
+      icrm: ISolution
+      crm_launcher: scripts/solution.crm.py
   scenario:
     name: root
     children:
@@ -43,6 +46,7 @@ meta:
       - name: solutions
         children:
           - name: solution
+            crm: Solution
             children:
               - name: actions
                 children:
