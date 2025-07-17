@@ -6,6 +6,7 @@ import pandas as pd
 import pyarrow as pa
 from enum import IntEnum
 from typing import Callable
+import pyarrow.parquet as pq
 from collections import Counter
 from icrms.ipatch import IPatch, GridSchema, GridAttribute, TopoSaveInfo
 
@@ -62,7 +63,7 @@ class Patch(IPatch):
             bounds (list): bounding box of the grid (organized as [min_x, min_y, max_x, max_y])
             first_size (list[float]): [width, height] of the first level grid
             subdivide_rules (list[list[int]]): list of subdivision rules per level
-            grid_file_path (str, optional): path to .arrow file containing grid data. If provided, grid data will be loaded from this file
+            grid_file_path (str, optional): path to .parquet file containing grid data. If provided, grid data will be loaded from this file
         """
         self.dirty = False
         self.epsg: int = epsg
@@ -113,10 +114,10 @@ class Patch(IPatch):
             'subdivide_rules': subdivide_rules
         }
         
-        # Load from Arrow file if file exists
+        # Load from Parquet file if file exists
         if grid_file_path and os.path.exists(grid_file_path):
             try:
-                # Load grid data from Arrow file
+                # Load grid data from Parquet file
                 self._load_grid_from_file()
             except Exception as e:
                 logger.error(f'Failed to load grid data from file: {str(e)}, the grid will be initialized using default method')
@@ -137,44 +138,49 @@ class Patch(IPatch):
         # --- Save Grid Data ---
         if self.grid_file_path and not self.grids.empty:
             try:
-                with pa.ipc.new_file(self.grid_file_path, GRID_SCHEMA) as writer:
-                    batch_size = 100000
-                    for chunk_start in range(0, len(self.grids), batch_size):
-                        chunk_end = min(chunk_start + batch_size, len(self.grids))
-                        chunk = self.grids.iloc[chunk_start:chunk_end]
-                        chunk_reset = chunk.reset_index(drop=False)
-                        table_chunk = pa.Table.from_pandas(chunk_reset, schema=GRID_SCHEMA)
-                        writer.write_table(table_chunk)
-                grid_save_message = f"Successfully saved grid data to {self.grid_file_path}"
+                # with pa.ipc.new_file(self.grid_file_path, GRID_SCHEMA) as writer:
+                #     batch_size = 100000
+                #     for chunk_start in range(0, len(self.grids), batch_size):
+                #         chunk_end = min(chunk_start + batch_size, len(self.grids))
+                #         chunk = self.grids.iloc[chunk_start:chunk_end]
+                #         chunk_reset = chunk.reset_index(drop=False)
+                #         table_chunk = pa.Table.from_pandas(chunk_reset, schema=GRID_SCHEMA)
+                #         writer.write_table(table_chunk)
+                grid_reset = self.grids.reset_index(drop=False)
+                grid_table = pa.Table.from_pandas(grid_reset, schema=GRID_SCHEMA)
+                pq.write_table(grid_table, self.grid_file_path)
+                grid_save_message = f'Successfully saved grid data to {self.grid_file_path}'
             except Exception as e:
                 grid_save_success = False
                 grid_save_message = f'Failed to save grid data: {str(e)}'
         
-        # --- Save Topology Data ---
-        if self.topology_file_path:
-            try:
-                topology_data = self._parse_topology_for_save()
+        # # --- Save Topology Data ---
+        # if self.topology_file_path:
+        #     try:
+        #         topology_data = self._parse_topology_for_save()
                 
-                if not topology_data['edge_key_cache'] and not topology_data['grid_edges']:
-                    topo_save_message = "Topology data is empty, skipping save."
-                else:
-                    with pa.ipc.new_file(self.topology_file_path, topology_data['schema']) as writer:
-                        writer.write_table(topology_data['table'])
-                    topo_save_message = f"Successfully saved topology data to {self.topology_file_path}"
-                    self.test_recode()
+        #         if not topology_data['edge_key_cache'] and not topology_data['grid_edges']:
+        #             topo_save_message = "Topology data is empty, skipping save."
+        #         else:
+        #             # with pa.ipc.new_file(self.topology_file_path, topology_data['schema']) as writer:
+        #             #     writer.write_table(topology_data['table'])
+        #             pq.write_table(topology_data['table'], self.topology_file_path)
+        #             topo_save_message = f"Successfully saved topology data to {self.topology_file_path}"
+        #             self.test_recode()
 
-            except Exception as e:
-                topo_save_success = False
-                topo_save_message = f'Failed to save topology data: {str(e)}'
+        #     except Exception as e:
+        #         topo_save_success = False
+        #         topo_save_message = f'Failed to save topology data: {str(e)}'
 
-        if grid_save_success and topo_save_success:
+        # if grid_save_success and topo_save_success:
+        if grid_save_success:
             self.dirty_mark = False
-            return {'success': True, 'message': f"{grid_save_message} {topo_save_message}"}
+            return {'success': True, 'message': grid_save_message}
         else:
-            return {'success': False, 'message': f"Grid Save: {grid_save_message} Topology Save: {topo_save_message}"}
+            return {'success': False, 'message': grid_save_message}
 
     def terminate(self) -> bool:
-        """Save the grid data to Arrow file
+        """Save the grid data to Parquet file
         Returns:
             bool: Whether the save was successful
         """
@@ -188,7 +194,8 @@ class Patch(IPatch):
             logger.error(f'Error saving data: {str(e)}')
             return False
 
-    def _load_grid_from_file(self, batch_size: int = 100000):
+    # def _load_grid_from_file(self, batch_size: int = 100000):
+    def _load_grid_from_file(self):
         """Load grid data from file streaming
 
         Args:
@@ -197,34 +204,38 @@ class Patch(IPatch):
         
         try:
             if self.grid_file_path and os.path.exists(self.grid_file_path):
-                all_dfs = []
-                arrow_batches_buffer = []
-                current_rows_in_buffer = 0
+                # all_dfs = []
+                # arrow_batches_buffer = []
+                # current_rows_in_buffer = 0
                 
-                with pa.ipc.open_file(self.grid_file_path) as reader:
-                    logger.info(f'Loading grid data from {self.grid_file_path}, Total Arrow batches: {reader.num_record_batches}')
-                    for i in range(reader.num_record_batches):
-                        batch = reader.get_batch(i)
-                        arrow_batches_buffer.append(batch)
-                        current_rows_in_buffer += batch.num_rows
+                # with pa.ipc.open_file(self.grid_file_path) as reader:
+                #     logger.info(f'Loading grid data from {self.grid_file_path}, Total Arrow batches: {reader.num_record_batches}')
+                #     for i in range(reader.num_record_batches):
+                #         batch = reader.get_batch(i)
+                #         arrow_batches_buffer.append(batch)
+                #         current_rows_in_buffer += batch.num_rows
                         
-                        if current_rows_in_buffer >= batch_size or (i == reader.num_record_batches - 1 and arrow_batches_buffer):
-                            if arrow_batches_buffer:
-                                logger.debug(f'Processing {len(arrow_batches_buffer)} Arrow batches with {current_rows_in_buffer} rows.')
-                                partial_table = pa.Table.from_batches(arrow_batches_buffer, schema=GRID_SCHEMA)
-                                arrow_batches_buffer = []
-                                current_rows_in_buffer = 0
+                #         if current_rows_in_buffer >= batch_size or (i == reader.num_record_batches - 1 and arrow_batches_buffer):
+                #             if arrow_batches_buffer:
+                #                 logger.debug(f'Processing {len(arrow_batches_buffer)} Arrow batches with {current_rows_in_buffer} rows.')
+                #                 partial_table = pa.Table.from_batches(arrow_batches_buffer, schema=GRID_SCHEMA)
+                #                 arrow_batches_buffer = []
+                #                 current_rows_in_buffer = 0
                                 
-                                partial_df = partial_table.to_pandas(use_threads=True, split_blocks=True, self_destruct=True)
-                                partial_df.set_index(ATTR_INDEX_KEY, inplace=True)
-                                all_dfs.append(partial_df)
-                                logger.debug(f'Append DataFrame chunk. Number of chunks: {len(all_dfs)}')
+                #                 partial_df = partial_table.to_pandas(use_threads=True, split_blocks=True, self_destruct=True)
+                #                 partial_df.set_index(ATTR_INDEX_KEY, inplace=True)
+                #                 all_dfs.append(partial_df)
+                #                 logger.debug(f'Append DataFrame chunk. Number of chunks: {len(all_dfs)}')
+                grid_table = pq.read_table(self.grid_file_path)
+                grid_df = grid_table.to_pandas()
+                grid_df.set_index(ATTR_INDEX_KEY, inplace=True)
+                self.grids = grid_df.sort_index()
                                 
-                if all_dfs:
-                    logger.info(f'Concatenating {len(all_dfs)} DataFrame chunks...')
-                    self.grids = pd.concat(all_dfs, copy=False)
-                    self.grids = self.grids.sort_index()
-                    logger.info(f'Successfully loaded {len(self.grids)} grid records from {self.grid_file_path}')
+                # if all_dfs:
+                #     logger.info(f'Concatenating {len(all_dfs)} DataFrame chunks...')
+                #     self.grids = pd.concat(all_dfs, copy=False)
+                #     self.grids = self.grids.sort_index()
+                logger.info(f'Successfully loaded {len(self.grids)} grid records from {self.grid_file_path}')
             else:
                 logger.warning(f"Grid file {self.grid_file_path} not found.")
             
@@ -233,48 +244,49 @@ class Patch(IPatch):
             raise e
 
         # Load topology data
-        try:
-            if self.topology_file_path and os.path.exists(self.topology_file_path):
-                logger.info(f'Loading topology data from {self.topology_file_path}')
-                with pa.ipc.open_file(self.topology_file_path) as reader:
-                    topo_table = reader.read_all()
+        # try:
+        #     if self.topology_file_path and os.path.exists(self.topology_file_path):
+        #         logger.info(f'Loading topology data from {self.topology_file_path}')
+        #         # with pa.ipc.open_file(self.topology_file_path) as reader:
+        #         #     topo_table = reader.read_all()
+        #         topo_table = pq.read_table(self.topology_file_path)
                 
-                self._release()
+        #         self._release()
 
-                if topo_table.num_rows > 0:
-                    serialized_edge_keys = topo_table['edge_key'].to_pylist()
+        #         if topo_table.num_rows > 0:
+        #             serialized_edge_keys = topo_table['edge_key'].to_pylist()
                     
-                    self._edge_index_cache = []
-                    for serialized_key in serialized_edge_keys:
-                        if serialized_key is not None:
-                            direction = int.from_bytes(serialized_key[0:1], 'big')
-                            remaining_bits = int.from_bytes(serialized_key[1:13], 'big')
-                            edge_key = (direction << 96) | remaining_bits
-                            self._edge_index_cache.append(edge_key)
+        #             self._edge_index_cache = []
+        #             for serialized_key in serialized_edge_keys:
+        #                 if serialized_key is not None:
+        #                     direction = int.from_bytes(serialized_key[0:1], 'big')
+        #                     remaining_bits = int.from_bytes(serialized_key[1:13], 'big')
+        #                     edge_key = (direction << 96) | remaining_bits
+        #                     self._edge_index_cache.append(edge_key)
 
-                    self._edge_index_dict = {key: i for i, key in enumerate(self._edge_index_cache)}
+        #             self._edge_index_dict = {key: i for i, key in enumerate(self._edge_index_cache)}
                     
-                    self._edge_adj_grids_global_ids = [item.as_py() if item.is_valid else [] for item in topo_table['adj_grids']]
+        #             self._edge_adj_grids_global_ids = [item.as_py() if item.is_valid else [] for item in topo_table['adj_grids']]
 
-                    self.grid_edges = {}
-                    grid_indices = topo_table['grid_idx'].to_pylist()
-                    north_edges = topo_table['north_edges'].to_pylist()
-                    south_edges = topo_table['south_edges'].to_pylist()
-                    west_edges = topo_table['west_edges'].to_pylist()
-                    east_edges = topo_table['east_edges'].to_pylist()
+        #             self.grid_edges = {}
+        #             grid_indices = topo_table['grid_idx'].to_pylist()
+        #             north_edges = topo_table['north_edges'].to_pylist()
+        #             south_edges = topo_table['south_edges'].to_pylist()
+        #             west_edges = topo_table['west_edges'].to_pylist()
+        #             east_edges = topo_table['east_edges'].to_pylist()
 
-                    for i, grid_idx in enumerate(grid_indices):
-                        if grid_idx is not None:
-                            self.grid_edges[grid_idx] = [
-                                set(north_edges[i] if north_edges[i] else []),
-                                set(west_edges[i] if west_edges[i] else []),
-                                set(south_edges[i] if south_edges[i] else []),
-                                set(east_edges[i] if east_edges[i] else [])
-                            ]
+        #             for i, grid_idx in enumerate(grid_indices):
+        #                 if grid_idx is not None:
+        #                     self.grid_edges[grid_idx] = [
+        #                         set(north_edges[i] if north_edges[i] else []),
+        #                         set(west_edges[i] if west_edges[i] else []),
+        #                         set(south_edges[i] if south_edges[i] else []),
+        #                         set(east_edges[i] if east_edges[i] else [])
+        #                     ]
 
-                logger.info(f'Successfully loaded topology data for {len(self.grid_edges)} grids.')
-            else:
-                 logger.warning(f'Topology file not found: {self.topology_file_path}')
+        #         logger.info(f'Successfully loaded topology data for {len(self.grid_edges)} grids.')
+        #     else:
+        #          logger.warning(f'Topology file not found: {self.topology_file_path}')
 
         except Exception as e:
             logger.error(f'Error loading topology data from file: {str(e)}')
@@ -800,8 +812,8 @@ class Patch(IPatch):
 
     def save(self) -> TopoSaveInfo:
         """
-        Save the grid data to an Arrow file with optimized memory usage.
-        This method writes the grid dataframe to disk using Apache Arrow format.
+        Save the grid data to an Parquet file with optimized memory usage.
+        This method writes the grid dataframe to disk using Parquet format.
         It processes the data in batches to minimize memory consumption during saving.
         Returns:
             SaveInfo: An object containing:
@@ -813,6 +825,7 @@ class Patch(IPatch):
             - Returns failure with exception details if any error occurs during saving
         """
         save_info_dict = self._save()
+        logger.info(save_info_dict['message'])
         save_info = TopoSaveInfo(
             success=save_info_dict.get('success', False),
             message=save_info_dict.get('message', '')
@@ -821,7 +834,7 @@ class Patch(IPatch):
     
     def test_recode(self):
         """
-        Reads a saved topology Arrow file, decodes the information,
+        Reads a saved topology Parquet file, decodes the information,
         and writes it to a human-readable text file for verification.
         """
         if not self.topology_file_path or not os.path.exists(self.topology_file_path):
@@ -831,8 +844,9 @@ class Patch(IPatch):
         txt_output_path = os.path.splitext(self.topology_file_path)[0] + '.txt'
 
         try:
-            with pa.ipc.open_file(self.topology_file_path) as reader:
-                topo_table = reader.read_all()
+            # with pa.ipc.open_file(self.topology_file_path) as reader:
+            #     topo_table = reader.read_all()
+            topo_table = pq.read_table(self.topology_file_path)
 
             if topo_table.num_rows == 0:
                 logger.info("Topology file is empty. Nothing to recode.")
