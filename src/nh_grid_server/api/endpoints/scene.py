@@ -3,7 +3,6 @@ from fastapi import APIRouter
 from fastapi import APIRouter, HTTPException
 
 from ...core.bootstrapping_treeger import BT
-# from ...schemas.scene import ResponseOfSceneNode
 from icrms.itreeger import SceneNodeMeta, ScenarioNodeDescription
 
 logger = logging.getLogger(__name__)
@@ -29,6 +28,38 @@ def get_scene_node_info(node_key: str, child_start_index: int = 0, child_end_ind
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get scene node info: {str(e)}')
+
+@router.get('/activate/')
+def activate_scene_node(node_key: str):
+    """
+    Description
+    --
+    Activate a scene node by its key.
+    """
+    try:
+        address = BT.instance.activate_node(node_key)
+        return {
+            'address': address
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to activate scene node: {str(e)}')
+
+@router.get('/deactivate/')
+def deactivate_scene_node(node_key: str):
+    """
+    Description
+    --
+    Deactivate a scene node by its key.
+    """
+    try:
+        if BT.instance.deactivate_node(node_key):
+            return {
+                'message': f'Scene node {node_key} deactivated successfully'
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f'Scene node {node_key} could not be deactivated')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to deactivate scene node: {str(e)}')
 
 @router.get('/scenario', response_model=list[ScenarioNodeDescription])
 def get_scenario_description():

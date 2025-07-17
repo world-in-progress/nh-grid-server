@@ -58,7 +58,7 @@ if __name__ == '__main__':
     subdivide_rules.append([1, 1])
     
     # Get grid file path
-    grid_file_path = Path(grid_patch_path, 'patch.topo.arrow')
+    grid_file_path = Path(grid_patch_path, 'patch.topo.parquet')
     
     # Init CRM
     crm = Patch(
