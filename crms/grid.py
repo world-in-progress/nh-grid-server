@@ -1,28 +1,64 @@
 import os
+import math
 import json
 import mmap
+import struct
+import atexit
 import sqlite3
+import logging
 import c_two as cc
 import numpy as np
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pandas as pd
 import multiprocessing as mp
 
 from pathlib import Path
+from enum import IntEnum
+from typing import Callable
+from functools import partial
 from contextlib import contextmanager
 
 from icrms.igrid import IGrid, PatchInfo
 from crms.patch import Patch, GridSchema
 
-ATTR_INDEX_KEY = 'index_key'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 WORKER_PATCH_OBJ = None
 WORKER_MMAP_OBJ = None
 WORKER_FILE_HANDLE = None
+
+BITS_DIRECTION = 1          # Direction [ 0 : v | 1 : u ]
+BITS_RANGE_COMPONENT = 16   # For min_numerator, min_denominator, max_numerator, max_denominator (UINT16)
+
+ADJACENT_CHECK_NORTH = lambda local_id, sub_width, sub_height: local_id < sub_width
+ADJACENT_CHECK_WEST = lambda local_id, sub_width, sub_height: local_id % sub_width == sub_width - 1
+ADJACENT_CHECK_SOUTH = lambda local_id, sub_width, sub_height: local_id >= sub_width * (sub_height - 1)
+ADJACENT_CHECK_EAST = lambda local_id, sub_width, sub_height: local_id % sub_width == 0
+
+EDGE_CODE_INVALID = -1
+class EdgeCode(IntEnum):
+    NORTH = 0b00  # 0
+    WEST  = 0b01  # 1
+    SOUTH = 0b10  # 2
+    EAST  = 0b11  # 3
+TOGGLE_EDGE_CODE_MAP = {
+    EdgeCode.NORTH: EdgeCode.SOUTH,
+    EdgeCode.WEST: EdgeCode.EAST,
+    EdgeCode.SOUTH: EdgeCode.NORTH,
+    EdgeCode.EAST: EdgeCode.WEST
+}
 
 class Overview:
     def __init__(self, size):
         self.size = size
         self.data = bytearray((size + 7) // 8)
+    
+    @staticmethod
+    def create(data: bytearray):
+        instance = Overview(0)
+        instance.size = len(data) * 8
+        instance.data = data
+        return instance
 
     def set_value(self, index, value):
         if index < 0 or index >= self.size:
@@ -50,6 +86,49 @@ class Overview:
             binary_string_parts.append(str(self.get_value(i)))
         return ''.join(binary_string_parts)
 
+class GridCache:
+    class _ArrayView:
+        def __init__(self, parent: 'GridCache'):
+            self._parent = parent
+        
+        def __getitem__(self, index: int) -> tuple[int, int]:
+            if index < 0 or index >= len(self):
+                raise IndexError('Index out of bounds')
+            return self._parent._decode_at_index(index)
+
+        def __len__(self) -> int:
+            return self._parent._len
+            
+        def __iter__(self):
+            for i in range(len(self)):
+                yield self[i]
+
+    def __init__(self, data: bytes):
+        if len(data) % 9 != 0:
+            raise ValueError('Data must be a multiple of 9 bytes long')
+        self._data = data
+        self._len = len(self._data) // 9
+        
+        self.array = self._ArrayView(self)
+        self.map = {index : i for i, index in enumerate(self.array)}
+
+        self.edges: list[list[set[int]]] = [[set() for _ in range(4)] for _ in range(self._len)]
+        self.grid_neighbours: list[list[set[int]]] = [[set() for _ in range(4)] for _ in range(self._len)]
+
+    def __len__(self) -> int:
+        return self._len
+    
+    def __repr__(self) -> str:
+        return f'<GridBytes with {self._len} items>'
+    
+    def _decode_at_index(self, index: int) -> tuple[int, int]:
+        start = index * 9
+        subdata = self._data[start : start + 9]
+        return struct.unpack('>BQ', subdata)
+
+    def has_grid(self, level: int, global_id: int) -> bool:
+        return (level, global_id) in self.map
+
 @cc.iicrm
 class Grid(IGrid):
     # def __init__(self, workspace: str):
@@ -59,18 +138,20 @@ class Grid(IGrid):
     #     self._init_db()
     
     def __init__(self):
-        schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
-        schema = json.load(open(schema_path, 'r'))
+        self.schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
+        schema = json.load(open(self.schema_path, 'r'))
+        
         self.epsg: int = schema['epsg']
         self.grid_info: list[list[float]] = schema['grid_info']
-        self.first_size: list[float] = self.grid_info[0]
+        self.first_level_grid_size: list[float] = self.grid_info[0]
         self.first_level_width = 0
         self.first_level_height = 0
         
-        self.grid_ov_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'meta_overview.bin')
-        self.grid_ov_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.grid_ov_path.exists():
-            self.grid_ov_path.unlink()
+        self.meta_ov_byte_length = 0
+        self.meta_ov_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'meta_overview.bin')
+        self.meta_ov_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.meta_ov_path.exists():
+            self.meta_ov_path.unlink()
 
         self.ov_info: list[tuple[list[int], int]] = []
         for i in range(len(self.grid_info)):
@@ -96,6 +177,19 @@ class Grid(IGrid):
         
         inf, neg_inf = float('inf'), float('-inf')
         self.bounds = [inf, inf, neg_inf, neg_inf]  # [min_x, min_y, max_x, max_y]
+        
+        self.subdivide_rules: list[list[int]] = []
+        self.meta_level_info: list[dict[str, int]] = [{'width': 1, 'height': 1}]
+        
+        self.patch_paths = [
+            Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
+            Path('resource', 'topo', 'schemas', '1', 'patches', '5')
+        ]
+
+        # Initialize cache
+        self._edge_index_cache: list[bytes] = []
+        self._edge_index_dict: dict[int, bytes] = {}
+        self._edge_adj_grids_indices: list[list[int]] = []
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -174,116 +268,484 @@ class Grid(IGrid):
         for patch_info in patch_infos:
             self.add_patch(patch_info)
     
-    @property
-    def entry_ov(self)-> Overview:
-        """Provide an overview from a grid at the first level"""
-        return Overview(self.ov_bit_length)
-    
     def create_meta_overview(self):
-        tp_schema = Path('resource', 'topo', 'schemas', '1', 'schema.json')
-        tp_patch = Path('resource', 'topo', 'schemas', '1', 'patches', '2')
-        tps = [Patch(tp_schema, tp_patch)]
-        
         # Update bounds
-        for patch in tps:
-            schema = patch.get_schema()
-            self.bounds[0] = min(self.bounds[0], schema.bounds[0])
-            self.bounds[1] = min(self.bounds[1], schema.bounds[1])
-            self.bounds[2] = max(self.bounds[2], schema.bounds[2])
-            self.bounds[3] = max(self.bounds[3], schema.bounds[3])
+        for patch_path in self.patch_paths:
+            meta_file = Path(patch_path, 'patch.meta.json')
+            tp_schema = json.load(open(meta_file, 'r'))
+            tp_bounds: list[float] = tp_schema['bounds']
+            self.bounds[0] = min(self.bounds[0], tp_bounds[0])
+            self.bounds[1] = min(self.bounds[1], tp_bounds[1])
+            self.bounds[2] = max(self.bounds[2], tp_bounds[2])
+            self.bounds[3] = max(self.bounds[3], tp_bounds[3])
         
+        # Update subdivide rules
+        self.subdivide_rules = [
+            [
+                int(math.ceil((self.bounds[2] - self.bounds[0]) / self.first_level_grid_size[0])),
+                int(math.ceil((self.bounds[3] - self.bounds[1]) / self.first_level_grid_size[1])),
+            ]
+        ]
+        for i in range(len(self.grid_info) - 1):
+            level_a = self.grid_info[i]
+            level_b = self.grid_info[i + 1]
+            self.subdivide_rules.append(
+                [
+                    int(level_a[0] / level_b[0]),
+                    int(level_a[1] / level_b[1]),
+                ]
+            )
+        self.subdivide_rules.append([1, 1])
+        
+        # Update level info
+        for level, rule in enumerate(self.subdivide_rules[:-1]):
+            prev_width, prev_height = self.meta_level_info[level]['width'], self.meta_level_info[level]['height']
+            self.meta_level_info.append({
+                'width': prev_width * rule[0],
+                'height': prev_height * rule[1]
+            })
+
         # Update first level width and height
-        self.first_level_width = int((self.bounds[2] - self.bounds[0]) / self.first_size[0])
-        self.first_level_height = int((self.bounds[3] - self.bounds[1]) / self.first_size[1])
+        self.first_level_width = self.meta_level_info[1]['width']
+        self.first_level_height = self.meta_level_info[1]['height']
+        
+        print(self.first_level_width, self.first_level_height)
         
         # Create overview
-        ov_width = int((self.bounds[2] - self.bounds[0]) / self.first_size[0])
-        ov_height = int((self.bounds[3] - self.bounds[1]) / self.first_size[1])
-        all_ov_size = ov_width * ov_height * self.ov_byte_length
+        self.meta_ov_byte_length = self.first_level_width * self.first_level_height * self.ov_byte_length
         
-        # Create meta overview file
-        with open(self.grid_ov_path, 'wb') as f:
-            f.write(bytearray(all_ov_size))
+        # # Create meta overview file
+        with open(self.meta_ov_path, 'wb') as f:
+            f.write(b'\x00' * self.meta_ov_byte_length)
 
-    def process_patch(self):
-        schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
-        patch_path = Path('resource', 'topo', 'schemas', '1', 'patches', '2')
-        patch = Patch(schema_path, patch_path)
-        first_level_size = patch.level_info[1]['width'] * patch.level_info[1]['height']
+    def process_patch(self, patch_path: str):
+        patch = Patch(self.schema_path, patch_path)
+        patch_width = patch.level_info[1]['width']
+        patch_height = patch.level_info[1]['height']
         
-        task_args = [
-            (
-                gid,
-                self.ov_offset, 
-                self.ov_bit_length,
-                self.bounds,
-                self.first_size,
-                self.first_level_width,
-                self.ov_byte_length
-            ) 
-            for gid in range(first_level_size)
+        batch_args = [
+            row_index
+            for row_index in range(patch_height)
         ]
-        results = []
-        num_processes = os.cpu_count()
+        batch_func = partial(
+            _process_chunk_overview_worker,
+            patch_width=patch_width,
+            ov_offset=self.ov_offset,
+            ov_bit_length=self.ov_bit_length,
+            bounds=self.bounds,
+            first_level_grid_size=self.first_level_grid_size,
+            first_level_width=self.first_level_width,
+            ov_byte_length=self.ov_byte_length
+        )
         
-        with mp.Pool(processes=num_processes, initializer=_init_worker, initargs=(patch, self.grid_ov_path)) as pool:
-            pool.map(_process_chunk_worker, task_args)
+        num_processes = min(os.cpu_count(), len(batch_args))
+        with mp.Pool(processes=num_processes, initializer=_init_chunk_overview_worker, initargs=(patch, self.meta_ov_path)) as pool:
+            pool.map(batch_func, batch_args)
 
-        # with open(self.grid_ov_path, 'r+b') as f:
-        #     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_WRITE) as mm:
-        #         for ov_byte_offset, ov_data in results:
-        #             if ov_data is None: continue
-        #             meta_ov_chunk = np.frombuffer(mm, dtype=np.uint8, count=self.ov_byte_length, offset=ov_byte_offset)
-        #             patch_ov_chunk = np.frombuffer(ov_data, dtype=np.uint8, count=self.ov_byte_length)
-        #             np.bitwise_xor(meta_ov_chunk, patch_ov_chunk, out=meta_ov_chunk)
-        #         mm.flush()
-        #         del meta_ov_chunk
-        #         del patch_ov_chunk
+        print(f'Process patch "{patch_path}" done.')
+
+    def _find_all_active_grids(self) -> list[int]:
+        batch_size = 1000 * self.ov_byte_length
+        batch_args = [
+            batch_byte_offset
+            for batch_byte_offset in range(0, self.meta_ov_byte_length, batch_size)
+        ]
+        batch_func = partial(
+            _batch_process_overview_worker,
+            batch_size=batch_size,
+            ov_byte_length=self.ov_byte_length,
+            ov_offset=self.ov_offset,
+            meta_level_info=self.meta_level_info,
+            subdivide_rules=self.subdivide_rules,
+            grid_info=self.grid_info
+        )
         
-        # schema = patch.get_schema()
-        # offset_x = int((schema.bounds[0] - self.bounds[0]) / self.first_size[0])
-        # offset_y = int((schema.bounds[1] - self.bounds[1]) / self.first_size[1])
-        # ov_byte_offset = (offset_y * self.first_level_width + offset_x) * self.ov_byte_length
+        num_processes = min(os.cpu_count(), len(batch_args))
+        with mp.Pool(processes=num_processes, initializer=_init_batch_process_overview_worker, initargs=(self.meta_ov_path,)) as pool:
+            active_grids_list = pool.map(batch_func, batch_args)
 
-        # for first_level_global_id in range(first_level_size):
-        #     # Make overview
-        #     ov = self.entry_ov
-        #     p_stack = [_encode_index(1, first_level_global_id)]
-        #     while p_stack:
-        #         index = p_stack.pop()
-        #         status = patch.get_status(index)
-        #         level, global_id = _decode_index(index)
-                
-        #         # Active grid: update overview
-        #         if status == 0b10:
-        #             offset = self.ov_offset[level - 1]
-        #             if level == 1:
-        #                 local_id = 0
-        #             else:
-        #                 local_id = patch.get_local_id(level, global_id)
-        #             ov.set_value(offset + local_id, True)
-                
-        #         # Inactive grid (not active, not deleted): check children
-        #         elif status == 0b00:
-        #             # Get children
-        #             child_level = level + 1
-        #             children_info = patch.get_children_global_ids(level, global_id)
-        #             if children_info is not None:
-        #                 for child_global_id in children_info:
-        #                     p_stack.append(_encode_index(child_level, child_global_id))
+        active_grid_info: bytearray = bytearray()
+        for active_grids in active_grids_list:
+            active_grid_info += active_grids
+        return active_grid_info
+    
+    def _get_grid_from_uv(self, level: int, level_width, level_height, u: int, v: int) -> tuple[int, int] | None:
+        if level >= len(self.meta_level_info) or level < 0:
+            return None
+        
+        if u < 0 or u >= level_width or v < 0 or v >= level_height:
+            return None
+        
+        global_id = v * level_width + u
+        return (level, global_id)
+    
+    def _get_toggle_edge_code(self, code: int) -> int:
+        return TOGGLE_EDGE_CODE_MAP.get(code, EDGE_CODE_INVALID)
+    
+    def _update_grid_neighbour(
+        self, grid_cache: GridCache, 
+        grid_level: int, grid_global_id: int, 
+        neighbour_level: int, neighbour_global_id: int,
+        edge_code: EdgeCode
+    ):
+        if edge_code == EDGE_CODE_INVALID:
+            return
+        
+        grid_idx = grid_cache.map[(grid_level, grid_global_id)]
+        neighbour_idx = grid_cache.map[(neighbour_level, neighbour_global_id)]
+        oppo_code = self._get_toggle_edge_code(edge_code)
+        
+        grid_cache.grid_neighbours[grid_idx][edge_code].add(neighbour_idx)
+        grid_cache.grid_neighbours[neighbour_idx][oppo_code].add(grid_idx)
+    
+    def _find_neighbours_along_edge(
+        self, grid_cache: GridCache,
+        grid_level: int, grid_global_id: int,
+        neighbour_level: int, neighbour_global_id: int,
+        edge_code: EdgeCode, adjacent_check_func: Callable
+    ):
+        # Check if neighbour grid is activated (whether if this grid is a leaf node)
+        if grid_cache.map.get((neighbour_level, neighbour_global_id)) is not None:
+            self._update_grid_neighbour(grid_level, grid_global_id, neighbour_level, neighbour_global_id, edge_code)
+        else:
+            adj_children: list[tuple[int, int]] = []
+            grid_stack: list[tuple[int, int]] = [(neighbour_level, neighbour_global_id)]
             
-        #     # Write overview to file
-        #     with open(self.grid_ov_path, 'r+b') as f:
-        #         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_WRITE) as mm:
-        #             meta_ov_chunk = np.frombuffer(mm, dtype=np.uint8, count=self.ov_byte_length, offset=ov_byte_offset)
-        #             patch_ov_chunk = np.frombuffer(ov.data, dtype=np.uint8, count=self.ov_byte_length)
-        #             np.bitwise_xor(meta_ov_chunk, patch_ov_chunk, out=meta_ov_chunk)
-        #             mm.flush()
-        #             del meta_ov_chunk
-        #             del patch_ov_chunk
+            while grid_stack:
+                _level, _global_id = grid_stack.pop()
+                if _level >= len(self.subdivide_rules):
+                    continue
+                
+                sub_width, sub_height = self.subdivide_rules[_level]
+                children_global_ids = _get_children_global_ids(_level, _global_id, self.meta_level_info, self.subdivide_rules)
+                if children_global_ids is None:
+                    continue
+                
+                for child_local_id, child_global_id in enumerate(children_global_ids):
+                    is_adjacent = adjacent_check_func(child_local_id, sub_width, sub_height)
+                    if not is_adjacent:
+                        continue
+                    
+                    child_level = _level + 1
+                    if grid_cache.has_grid(child_level, child_global_id):
+                        adj_children.append((child_level, child_global_id))
+                    else:
+                        grid_stack.append((child_level, child_global_id))
+            
+            for child_level, child_global_id in adj_children:
+                self._update_grid_neighbour(grid_level, grid_global_id, child_level, child_global_id, edge_code)
+                
+    def _find_grid_neighbours(self, grid_cache: GridCache):
+        for level, global_id in grid_cache.array:
+            width = self.meta_level_info[level]['width']
+            height = self.meta_level_info[level]['height']
+            
+            global_u = global_id % width
+            global_v = global_id // width
+            
+            # Check top edge with tGrid
+            t_grid = self._get_grid_from_uv(level, width, height, global_u, global_v + 1)
+            if t_grid:
+                self._find_neighbours_along_edge(grid_cache, level, global_id, t_grid[0], t_grid[1], EdgeCode.NORTH, ADJACENT_CHECK_NORTH)
+            # Check left edge with lGrid
+            l_grid = self._get_grid_from_uv(level, width, height, global_u - 1, global_v)
+            if l_grid:
+                self._find_neighbours_along_edge(grid_cache, level, global_id, l_grid[0], l_grid[1], EdgeCode.WEST, ADJACENT_CHECK_WEST)
+            # Check bottom edge with bGrid
+            b_grid = self._get_grid_from_uv(level, width, height, global_u, global_v - 1)
+            if b_grid:
+                self._find_neighbours_along_edge(grid_cache, level, global_id, b_grid[0], b_grid[1], EdgeCode.SOUTH, ADJACENT_CHECK_SOUTH)
+            # Check right edge with rGrid
+            r_grid = self._get_grid_from_uv(level, width, height, global_u + 1, global_v)
+            if r_grid:
+                self._find_neighbours_along_edge(grid_cache, level, global_id, r_grid[0], r_grid[1], EdgeCode.EAST, ADJACENT_CHECK_EAST)
+    
+    def _get_fractional_coords(self, level: int, global_id: int) -> tuple[list[int], list[int], list[int], list[int]]:
+        width = self.meta_level_info[level]['width']
+        height = self.meta_level_info[level]['height']
+        
+        u = global_id % width
+        v = global_id // width
+        
+        x_min_frac = _simplifyFraction(u, width)
+        x_max_frac = _simplifyFraction(u + 1, width)
+        y_min_frac = _simplifyFraction(v, height)
+        y_max_frac = _simplifyFraction(v + 1, height)
+        
+        return x_min_frac, x_max_frac, y_min_frac, y_max_frac
 
-        print('Process patch done.')
+    def _get_edge_index(self, grid_index_a: int | None, grid_index_b: int | None, direction: int, edge_range_info: list[list[int]]) -> bytes:
+        if grid_index_a is None and grid_index_b is None:
+            raise ValueError('Both grid_index_a and grid_index_b cannot be None')
+        if direction not in (0, 1):
+            raise ValueError('Direction must be either 0 (vertical) or 1 (horizontal)')
+        if not isinstance(edge_range_info, list) or len(edge_range_info) != 3:
+            raise ValueError('edge_range_info must be a list of three [numerator, denominator] pairs')
+        
+        # Unpack the range components. Each is expected to be a UINT32
+        min_num, min_den = edge_range_info[0]
+        max_num, max_den = edge_range_info[1]
+        shared_num, shared_den = edge_range_info[2]
+        
+        # Ensure canonical ordering for the varying range (min <= max)
+        if float(min_num) / float(min_den) > float(max_num) / float(max_den):
+            min_num, max_num = max_num, min_num
+            min_den, max_den = max_den, min_den
+        
+        # Construct the edge key (25 bytes total)
+        # Bit allocation:
+        # aligned: 7 bit (highest)
+        # direction: 1 bit
+        # min_num: 32 bits
+        # min_den: 32 bits
+        # max_num: 32 bits
+        # max_den: 32 bits
+        # shared_num: 32 bits
+        # shared_den: 32 bits
+        # Total bits = 1 + 7 + 32 * 6 = 200 bits (25 bytes)
+        
+        edge_key = bytearray()
+        edge_key += b'\x01' if direction else b'\x00'
+        edge_key += int.to_bytes(min_num, 4, 'big')
+        edge_key += int.to_bytes(min_den, 4, 'big')
+        edge_key += int.to_bytes(max_num, 4, 'big')
+        edge_key += int.to_bytes(max_den, 4, 'big')
+        edge_key += int.to_bytes(shared_num, 4, 'big')
+        edge_key += int.to_bytes(shared_den, 4, 'big')
+        edge_key = bytes(edge_key)
+        
+        # Try get edge_index
+        if edge_key not in self._edge_index_dict:
+            edge_index = len(self._edge_index_cache)
+            self._edge_index_dict[edge_key] = edge_index
+            self._edge_index_cache.append(edge_key)
 
+            grids = [grid_index_a, grid_index_b]
+            self._edge_adj_grids_indices.append(grids)
+            return edge_index
+        else:
+            return self._edge_index_dict[edge_key]
+    
+    def _add_grid_edge(
+        self,
+        grid_cache: GridCache, grid_index: int,
+        edge_code: EdgeCode, edge_index: int
+    ):
+        grid_cache.edges[grid_index][edge_code].add(edge_index)
+    
+    
+    def _calc_horizontal_edges(
+        self, grid_cache: GridCache,
+        grid_index: int,
+        level: int, global_id: int,
+        neighbour_indices: list[int],
+        edge_code: EdgeCode, op_edge_code: EdgeCode,
+        shared_y_frac: list[int]
+    ):
+        grid_x_min_frac, grid_x_max_frac, _, _ = self._get_fractional_coords(level, global_id)
+        grid_x_min, grid_x_max = grid_x_min_frac[0] / grid_x_min_frac[1], grid_x_max_frac[0] / grid_x_max_frac[1]
+        
+        # Case when no neighbour ##################################################
+        if not neighbour_indices:
+            edge_index = self._get_edge_index(grid_index, None, 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac])
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            return
+        
+        # Case when neighbour has lower level ##################################################
+        if len(neighbour_indices) == 1 and grid_cache.array[neighbour_indices[0]][0] < level:
+            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac])
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            self._add_grid_edge(grid_cache, neighbour_indices[0], op_edge_code, edge_index)
+            return
+        
+        # Case when neighbours have equal or higher levels ##################################################
+        processed_neighbours = []
+        for n_grid_index in neighbour_indices:
+            n_level, n_global_id = grid_cache.array[n_grid_index]
+            n_x_min_frac, n_x_max_frac, _, _ = self._get_fractional_coords(n_level, n_global_id)
+            processed_neighbours.append({
+                'index': n_grid_index,
+                'x_min_frac': n_x_min_frac,
+                'x_max_frac': n_x_max_frac,
+                'x_min': n_x_min_frac[0] / n_x_min_frac[1],
+                'x_max': n_x_max_frac[0] / n_x_max_frac[1],
+            })
+            
+        # Sort neighbours by their x_min
+        processed_neighbours.sort(key=lambda n: n['x_min'])
+
+        # Calculate edge between grid xMin and first neighbour if existed
+        if grid_x_min != processed_neighbours[0]['x_min']:
+            edge_index = self._get_edge_index(
+                grid_index, None, 1,
+                [grid_x_min_frac, processed_neighbours[0]['x_min_frac'], shared_y_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+        
+        # Calculate edges between neighbours
+        for i in range(len(processed_neighbours) - 1):
+            neighbour_from = processed_neighbours[i]
+            neighbour_to = processed_neighbours[i + 1]
+            
+            # Calculate edge of neighbour_from
+            edge_index = self._get_edge_index(
+                grid_index, neighbour_from['index'], 1,
+                [neighbour_from['x_min_frac'], neighbour_from['x_max_frac'], shared_y_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            self._add_grid_edge(grid_cache, neighbour_from['index'], op_edge_code, edge_index)
+            
+            # Calculate edge between neighbourFrom and neighbourTo if existed
+            if neighbour_from['x_max'] != neighbour_to['x_min']:
+                edge_index = self._get_edge_index(
+                    grid_index, None, 1,
+                    [neighbour_from['x_max_frac'], neighbour_to['x_min_frac'], shared_y_frac]
+                )
+                self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+                
+        # Calculate edge of last neighbour
+        neighbour_last = processed_neighbours[-1]
+        edge_index = self._get_edge_index(
+            grid_index, neighbour_last['index'], 1,
+            [neighbour_last['x_min_frac'], neighbour_last['x_max_frac'], shared_y_frac]
+        )
+        self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+        self._add_grid_edge(grid_cache, neighbour_last['index'], op_edge_code, edge_index)
+        
+        # Calculate edge between last neighbour and grid xMax if existed
+        if grid_x_max != neighbour_last['x_max']:
+            edge_index = self._get_edge_index(
+                grid_index, None, 1,
+                [neighbour_last['x_max_frac'], grid_x_max_frac, shared_y_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+    
+    def _calc_vertical_edges(
+        self, grid_cache: GridCache,
+        grid_index: int,
+        level: int, global_id: int,
+        neighbour_indices: list[int],
+        edge_code: EdgeCode, op_edge_code: EdgeCode,
+        shared_x_frac: list[int]
+    ):
+        _, _, grid_y_min_frac, grid_y_max_frac = self._get_fractional_coords(level, global_id)
+        grid_y_min, grid_y_max = grid_y_min_frac[0] / grid_y_min_frac[1], grid_y_max_frac[0] / grid_y_max_frac[1]
+        
+        # Case when no neighbour ##################################################
+        if not neighbour_indices:
+            edge_index = self._get_edge_index(grid_index, None, 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac])
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            return
+        
+        # Case when neighbour has lower level ##################################################
+        if len(neighbour_indices) == 1 and grid_cache.array[neighbour_indices[0]][0] < level:
+            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac])
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            self._add_grid_edge(grid_cache, neighbour_indices[0], op_edge_code, edge_index)
+            return
+        
+        # Case when neighbours have equal or higher levels ##################################################
+        processed_neighbours = []
+        for n_grid_index in neighbour_indices:
+            n_level, n_global_id = grid_cache.array[n_grid_index]
+            _, _, n_y_min_frac, n_y_max_frac = self._get_fractional_coords(n_level, n_global_id)
+            processed_neighbours.append({
+                'index': n_grid_index,
+                'y_min_frac': n_y_min_frac,
+                'y_max_frac': n_y_max_frac,
+                'y_min': n_y_min_frac[0] / n_y_min_frac[1],
+                'y_max': n_y_max_frac[0] / n_y_max_frac[1],
+            })
+
+        # Sort neighbours by their y_min
+        processed_neighbours.sort(key=lambda n: n['y_min'])
+
+        # Calculate edge between grid yMin and first neighbour if existed
+        if grid_y_min != processed_neighbours[0]['y_min']:
+            edge_index = self._get_edge_index(
+                grid_index, None, 0,
+                [grid_y_min_frac, processed_neighbours[0]['y_min_frac'], shared_x_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+        
+        # Calculate edges between neighbours
+        for i in range(len(processed_neighbours) - 1):
+            neighbour_from = processed_neighbours[i]
+            neighbour_to = processed_neighbours[i + 1]
+            
+            # Calculate edge of neighbour_from
+            edge_index = self._get_edge_index(
+                grid_index, neighbour_from['index'], 0,
+                [neighbour_from['y_min_frac'], neighbour_from['y_max_frac'], shared_x_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            self._add_grid_edge(grid_cache, neighbour_from['index'], op_edge_code, edge_index)
+            
+            # Calculate edge between neighbourFrom and neighbourTo if existed
+            if neighbour_from['y_max'] != neighbour_to['y_min']:
+                edge_index = self._get_edge_index(
+                    grid_index, None, 0,
+                    [neighbour_from['y_max_frac'], neighbour_to['y_min_frac'], shared_x_frac]
+                )
+                self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+                
+        # Calculate edge of last neighbour
+        neighbour_last = processed_neighbours[-1]
+        edge_index = self._get_edge_index(
+            grid_index, neighbour_last['index'], 0,
+            [neighbour_last['y_min_frac'], neighbour_last['y_max_frac'], shared_x_frac]
+        )
+        self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+        self._add_grid_edge(grid_cache, neighbour_last['index'], op_edge_code, edge_index)
+
+        # Calculate edge between last neighbour and grid yMax if existed
+        if grid_y_max != neighbour_last['y_max']:
+            edge_index = self._get_edge_index(
+                grid_index, None, 0,
+                [neighbour_last['y_max_frac'], grid_y_max_frac, shared_x_frac]
+            )
+            self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
+            
+    def _calc_grid_edges(self, grid_cache: GridCache):
+        for grid_index, (level, global_id) in enumerate(grid_cache.array):
+            neighbours = grid_cache.grid_neighbours[grid_index]
+            grid_x_min_frac, grid_x_max_frac, grid_y_min_frac, grid_y_max_frac = self._get_fractional_coords(level, global_id)
+            
+            north_neighbours = list(neighbours[EdgeCode.NORTH])
+            self._calc_horizontal_edges(grid_cache, grid_index, level, global_id, north_neighbours, EdgeCode.NORTH, EdgeCode.SOUTH, grid_y_max_frac)
+            
+            west_neighbours = list(neighbours[EdgeCode.WEST])
+            self._calc_vertical_edges(grid_cache, grid_index, level, global_id, west_neighbours, EdgeCode.WEST, EdgeCode.EAST, grid_x_min_frac)
+            
+            south_neighbours = list(neighbours[EdgeCode.SOUTH])
+            self._calc_horizontal_edges(grid_cache, grid_index, level, global_id, south_neighbours, EdgeCode.SOUTH, EdgeCode.NORTH, grid_y_min_frac)
+            
+            east_neighbours = list(neighbours[EdgeCode.EAST])
+            self._calc_vertical_edges(grid_cache, grid_index, level, global_id, east_neighbours, EdgeCode.EAST, EdgeCode.WEST, grid_x_max_frac)
+
+    def _parse_topology(self, grid_cache: GridCache):
+        # Step 1: Calculate all grid neighbours
+        self._find_grid_neighbours(grid_cache)
+        
+        # Step 2: Calculate all grid edges
+        self._calc_grid_edges(grid_cache)
+
+    def merge(self):
+        # Iterate all patches to process the meta overview
+        for patch_path in self.patch_paths:
+            if not patch_path.exists():
+                continue
+            self.process_patch(patch_path)
+            
+        # Find all active grids
+        active_grid_info = self._find_all_active_grids()
+        grid_cache = GridCache(active_grid_info)
+        print(f'Active grid info count: {len(grid_cache)}')
+        
+        # Parse topology information
+        self._parse_topology(grid_cache)
+        
+        
 # Helpers ##################################################
 
 def _encode_index(level: int, global_id: int) -> np.uint64:
@@ -296,55 +758,230 @@ def _decode_index(encoded: np.uint64) -> tuple[int, int]:
     global_id = int(encoded & 0xFFFFFFFF)
     return level, global_id
 
-def _encode_index_batch(levels: np.ndarray, global_ids: np.ndarray) -> np.ndarray:
-    """Encode multiple levels and global_ids into a single index key array"""
-    return (levels.astype(np.uint64) << 32) | global_ids.astype(np.uint64)
+def _cleanup_worker_resources():
+    """
+    This function will be registered to run when the worker process exits.
+    It cleans up the global file handle and mmap object.
+    """
+    global WORKER_MMAP_OBJ, WORKER_FILE_HANDLE
+    if WORKER_MMAP_OBJ:
+        WORKER_MMAP_OBJ.close()
+        WORKER_MMAP_OBJ = None
+    if WORKER_FILE_HANDLE:
+        WORKER_FILE_HANDLE.close()
+        WORKER_FILE_HANDLE = None
 
-def _init_worker(patch_instance: Patch, grid_ov_path: str):
+def _init_chunk_overview_worker(patch_instance: Patch, grid_ov_path: str):
     global WORKER_PATCH_OBJ, WORKER_MMAP_OBJ, WORKER_FILE_HANDLE
     WORKER_PATCH_OBJ = patch_instance
     WORKER_FILE_HANDLE = open(grid_ov_path, 'r+b')
     WORKER_MMAP_OBJ = mmap.mmap(WORKER_FILE_HANDLE.fileno(), 0, access=mmap.ACCESS_WRITE)
 
-def _process_chunk_worker(args):
+    atexit.register(_cleanup_worker_resources)
+
+def _process_chunk_overview_worker(
+        row_index: int,
+        patch_width: int,
+        ov_offset: list[int],
+        ov_bit_length: int,
+        bounds: list[float],
+        first_level_grid_size: list[float],
+        first_level_width: int,
+        ov_byte_length: int
+    ) -> None:
     """
     Worker function to process a single patch overview.
     """
     global WORKER_PATCH_OBJ, WORKER_MMAP_OBJ
-    patch = WORKER_PATCH_OBJ
-    mm = WORKER_MMAP_OBJ
     
-    # Unpack the rest of the arguments
-    first_level_global_id, ov_offset, ov_bit_length, bounds, first_size, first_level_width, ov_byte_length = args
+    mm = WORKER_MMAP_OBJ
+    patch = WORKER_PATCH_OBJ
+    ov = Overview(ov_bit_length)
+    empty_data = bytearray(ov_byte_length)
+    row_results_buffer = bytearray(patch_width * ov_byte_length)
+    for col_index in range(patch_width):
+        ov.data = empty_data[:] # reset overview data for each column
+        
+        first_level_global_id = row_index * patch_width + col_index
+        p_stack = [_encode_index(1, first_level_global_id)]
+        while p_stack:
+            index = p_stack.pop()
+            status = patch.get_status(index)
+            level, global_id = _decode_index(index)
+            
+            # Handle active status
+            if status == 0b10:
+                offset = ov_offset[level - 1]
+                local_id = 0 if level == 1 else patch.get_local_id(level, global_id)
+                ov.set_value(offset + local_id, True)
+
+            # Handle inactive (inactive and not deleted) status
+            elif status == 0b00:
+                children_info = patch.get_children_global_ids(level, global_id)
+                if children_info is not None:
+                    for child_global_id in children_info:
+                        p_stack.append(_encode_index(level + 1, child_global_id))
+            # TODO: How to flag 0b01 (deleted) status?
+    
+        buffer_start = col_index * ov_byte_length
+        buffer_end = buffer_start + ov_byte_length
+        row_results_buffer[buffer_start:buffer_end] = ov.data
     
     schema = patch.get_schema()
-    patch_offset_x = int((schema.bounds[0] - bounds[0]) / first_size[0])
-    patch_offset_y = int((schema.bounds[1] - bounds[1]) / first_size[1])
-    ov_byte_offset = (patch_offset_y * first_level_width + patch_offset_x) * ov_byte_length
+    patch_offset_x = int((schema.bounds[0] - bounds[0]) / first_level_grid_size[0])
+    patch_offset_y = int((schema.bounds[1] - bounds[1]) / first_level_grid_size[1])
+    row_start_offset_in_file = ((patch_offset_y + row_index) * first_level_width + patch_offset_x) * ov_byte_length
+    
+    # Get current and meta overview chunks
+    write_chunk_size = patch_width * ov_byte_length
+    patch_ov_chunk = np.frombuffer(row_results_buffer, dtype=np.uint8)
+    meta_ov_chunk = np.frombuffer(mm, dtype=np.uint8, count=write_chunk_size, offset=row_start_offset_in_file)
+    
+    # Perform bitwise OR operation to merge the patch overview into the meta overview
+    np.bitwise_or(meta_ov_chunk, patch_ov_chunk, out=meta_ov_chunk)
 
-    ov = Overview(ov_bit_length)
-    p_stack = [_encode_index(1, first_level_global_id)]
-    
-    while p_stack:
-        index = p_stack.pop()
-        status = patch.get_status(index)
-        level, global_id = _decode_index(index)
-        
-        if status == 0b10:
-            offset = ov_offset[level - 1]
-            local_id = 0 if level == 1 else patch.get_local_id(level, global_id)
-            ov.set_value(offset + local_id, True)
-        elif status == 0b00:
-            children_info = patch.get_children_global_ids(level, global_id)
-            if children_info is not None:
-                for child_global_id in children_info:
-                    p_stack.append(_encode_index(level + 1, child_global_id))
-    
-    meta_ov_chunk = np.frombuffer(mm, dtype=np.uint8, count=ov_byte_length, offset=ov_byte_offset)
-    patch_ov_chunk = np.frombuffer(ov.data, dtype=np.uint8)
-    np.bitwise_xor(meta_ov_chunk, patch_ov_chunk, out=meta_ov_chunk)
-    mm.flush()
     del meta_ov_chunk
     del patch_ov_chunk
+    return
 
-    return True
+def _get_meta_local_id(level: int, global_id: int, meta_level_info: list[dict[str, int]], subdivide_rules: list[list[int]]) -> int:
+    if level == 0 or level == 1:
+        return global_id
+
+    total_width = meta_level_info[level]['width']
+    sub_width = subdivide_rules[level - 1][0]
+    sub_height = subdivide_rules[level - 1][1]
+    local_x = global_id % total_width
+    local_y = global_id // total_width
+    return (((local_y % sub_height) * sub_width) + (local_x % sub_width))
+
+def _get_meta_global_id(
+        level: int,
+        first_level_global_id: int,
+        local_id_from_first_level: int,
+        meta_level_info: list[dict[str, int]],
+        grid_info: list[list[float]]
+    ) -> int:
+    if level == 0 or level == 1:
+        return first_level_global_id
+
+    sub_width_from_first_level = int(grid_info[0][0] / grid_info[level - 1][0])
+    sub_height_from_first_level = int(grid_info[0][1] / grid_info[level - 1][1])
+
+    first_level_bl_u = first_level_global_id * sub_width_from_first_level
+    first_level_bl_v = first_level_global_id * sub_height_from_first_level
+
+    local_u = local_id_from_first_level % sub_width_from_first_level
+    local_v = local_id_from_first_level // sub_width_from_first_level
+
+    level_width = meta_level_info[level]['width']
+    return (first_level_bl_u + local_u) + (first_level_bl_v + local_v) * level_width
+
+def _get_children_global_ids(
+        level: int,
+        global_id: int,
+        meta_level_info: list[dict[str, int]],
+        subdivide_rules: list[list[int]]
+    ) -> list[int]:
+    if (level < 0) or (level >= len(meta_level_info)):
+        return []
+
+    width = meta_level_info[level]['width']
+    global_u = global_id % width
+    global_v = global_id // width
+    sub_width = subdivide_rules[level][0]
+    sub_height = subdivide_rules[level][1]
+    sub_count = sub_width * sub_height
+    
+    baseGlobalWidth = width * sub_width
+    child_global_ids = [0] * sub_count
+    for local_id in range(sub_count):
+        local_u = local_id % sub_width
+        local_v = local_id // sub_width
+        
+        sub_global_u = global_u * sub_width + local_u
+        sub_global_v = global_v * sub_height + local_v
+        child_global_ids[local_id] = sub_global_v * baseGlobalWidth + sub_global_u
+    
+    return child_global_ids
+
+def _encode_grid_to_bytes(level: int, global_id: int) -> bytes:
+    """Encode level (uint8) and global_id (uint64) into bytes"""
+    return struct.pack('>BQ', level, global_id)
+
+def _process_overview(
+        ov: Overview,
+        global_id: int,
+        ov_offset: list[int],
+        meta_level_info: list[dict[str, int]],
+        subdivide_rules: list[list[int]],
+        grid_info: list[list[float]]
+    ) -> bytearray:
+    active_grid_info: bytearray = bytearray()
+    g_stack = [(1, global_id)] # stack of (level, local_id)
+    while g_stack:
+        level, local_id = g_stack.pop()
+        if level == 1:
+            local_id = 0
+        ov_index = ov_offset[level - 1] + local_id
+        
+        if ov.get_value(ov_index):
+            _global_id = _get_meta_global_id(level, global_id, local_id, meta_level_info, grid_info)
+            active_grid_info += _encode_grid_to_bytes(level, _global_id)
+        else:
+            if level >= len(meta_level_info) - 1: # meta_level_info[0] is the root level (not the first), valid length of meta_level_info is len(meta_level_info) - 1
+                continue
+            
+            children_info = _get_children_global_ids(level, global_id, meta_level_info, subdivide_rules)
+            if children_info:
+                for child_global_id in children_info:
+                    g_stack.append((level + 1, _get_meta_local_id(level + 1, child_global_id, meta_level_info, subdivide_rules)))
+
+    return active_grid_info
+
+def _init_batch_process_overview_worker(grid_ov_path: str):
+    global WORKER_MMAP_OBJ, WORKER_FILE_HANDLE
+    WORKER_FILE_HANDLE = open(grid_ov_path, 'r+b')
+    WORKER_MMAP_OBJ = mmap.mmap(WORKER_FILE_HANDLE.fileno(), 0, access=mmap.ACCESS_READ)
+    
+    atexit.register(_cleanup_worker_resources)
+
+def _batch_process_overview_worker(
+        batch_byte_offset: int,
+        batch_size: int,
+        ov_byte_length: int,
+        ov_offset: list[int],
+        meta_level_info: list[dict[str, int]],
+        subdivide_rules: list[list[int]],
+        grid_info: list[list[float]]
+    ) -> bytearray:
+    global WORKER_MMAP_OBJ
+    mm = WORKER_MMAP_OBJ
+    
+    end = min(batch_byte_offset + batch_size, mm.size())
+    batch = mm[batch_byte_offset:end]
+    active_grid_info: bytearray = bytearray()
+    for i in range(0, len(batch), ov_byte_length):
+        ov_bytes_i = batch[i:i + ov_byte_length]
+        ov = Overview.create(ov_bytes_i)
+        
+        # Skip empty overview
+        if int.from_bytes(ov.data, byteorder='big', signed=False) == 0:
+            continue
+        
+        active_grid_info += _process_overview(
+            ov,
+            batch_byte_offset // ov_byte_length,
+            ov_offset,
+            meta_level_info,
+            subdivide_rules,
+            grid_info
+        )
+    return active_grid_info
+
+def _simplifyFraction(n: int, m: int) -> list[int]:
+    """Find the greatest common divisor of two numbers"""
+    a, b = n, m
+    while b != 0:
+        a, b = b, a % b
+    return [n // a, m // a]
