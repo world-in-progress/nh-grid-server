@@ -1,4 +1,5 @@
 import os
+import time
 import math
 import json
 import mmap
@@ -112,8 +113,10 @@ class GridCache:
         self.array = self._ArrayView(self)
         self.map = {index : i for i, index in enumerate(self.array)}
 
+        self.fract_coords: list[tuple[list[int], list[int], list[int], list[int]]] = []
+
         self.edges: list[list[set[int]]] = [[set() for _ in range(4)] for _ in range(self._len)]
-        self.grid_neighbours: list[list[set[int]]] = [[set() for _ in range(4)] for _ in range(self._len)]
+        self.neighbours: list[list[set[int]]] = [[set() for _ in range(4)] for _ in range(self._len)]
 
     def __len__(self) -> int:
         return self._len
@@ -183,7 +186,7 @@ class Grid(IGrid):
         
         self.patch_paths = [
             Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
-            Path('resource', 'topo', 'schemas', '1', 'patches', '5')
+            # Path('resource', 'topo', 'schemas', '1', 'patches', '5')
         ]
 
         # Initialize cache
@@ -350,6 +353,7 @@ class Grid(IGrid):
             batch_byte_offset
             for batch_byte_offset in range(0, self.meta_ov_byte_length, batch_size)
         ]
+        
         batch_func = partial(
             _batch_process_overview_worker,
             batch_size=batch_size,
@@ -394,9 +398,8 @@ class Grid(IGrid):
         grid_idx = grid_cache.map[(grid_level, grid_global_id)]
         neighbour_idx = grid_cache.map[(neighbour_level, neighbour_global_id)]
         oppo_code = self._get_toggle_edge_code(edge_code)
-        
-        grid_cache.grid_neighbours[grid_idx][edge_code].add(neighbour_idx)
-        grid_cache.grid_neighbours[neighbour_idx][oppo_code].add(grid_idx)
+        grid_cache.neighbours[grid_idx][edge_code].add(neighbour_idx)
+        grid_cache.neighbours[neighbour_idx][oppo_code].add(grid_idx)
     
     def _find_neighbours_along_edge(
         self, grid_cache: GridCache,
@@ -406,7 +409,7 @@ class Grid(IGrid):
     ):
         # Check if neighbour grid is activated (whether if this grid is a leaf node)
         if grid_cache.map.get((neighbour_level, neighbour_global_id)) is not None:
-            self._update_grid_neighbour(grid_level, grid_global_id, neighbour_level, neighbour_global_id, edge_code)
+            self._update_grid_neighbour(grid_cache, grid_level, grid_global_id, neighbour_level, neighbour_global_id, edge_code)
         else:
             adj_children: list[tuple[int, int]] = []
             grid_stack: list[tuple[int, int]] = [(neighbour_level, neighbour_global_id)]
@@ -533,7 +536,6 @@ class Grid(IGrid):
     ):
         grid_cache.edges[grid_index][edge_code].add(edge_index)
     
-    
     def _calc_horizontal_edges(
         self, grid_cache: GridCache,
         grid_index: int,
@@ -542,7 +544,7 @@ class Grid(IGrid):
         edge_code: EdgeCode, op_edge_code: EdgeCode,
         shared_y_frac: list[int]
     ):
-        grid_x_min_frac, grid_x_max_frac, _, _ = self._get_fractional_coords(level, global_id)
+        grid_x_min_frac, grid_x_max_frac, _, _ = grid_cache.fract_coords[grid_index]
         grid_x_min, grid_x_max = grid_x_min_frac[0] / grid_x_min_frac[1], grid_x_max_frac[0] / grid_x_max_frac[1]
         
         # Case when no neighbour ##################################################
@@ -561,8 +563,7 @@ class Grid(IGrid):
         # Case when neighbours have equal or higher levels ##################################################
         processed_neighbours = []
         for n_grid_index in neighbour_indices:
-            n_level, n_global_id = grid_cache.array[n_grid_index]
-            n_x_min_frac, n_x_max_frac, _, _ = self._get_fractional_coords(n_level, n_global_id)
+            n_x_min_frac, n_x_max_frac, _, _ = grid_cache.fract_coords[n_grid_index]
             processed_neighbours.append({
                 'index': n_grid_index,
                 'x_min_frac': n_x_min_frac,
@@ -628,7 +629,7 @@ class Grid(IGrid):
         edge_code: EdgeCode, op_edge_code: EdgeCode,
         shared_x_frac: list[int]
     ):
-        _, _, grid_y_min_frac, grid_y_max_frac = self._get_fractional_coords(level, global_id)
+        _, _, grid_y_min_frac, grid_y_max_frac = grid_cache.fract_coords[grid_index]
         grid_y_min, grid_y_max = grid_y_min_frac[0] / grid_y_min_frac[1], grid_y_max_frac[0] / grid_y_max_frac[1]
         
         # Case when no neighbour ##################################################
@@ -647,8 +648,7 @@ class Grid(IGrid):
         # Case when neighbours have equal or higher levels ##################################################
         processed_neighbours = []
         for n_grid_index in neighbour_indices:
-            n_level, n_global_id = grid_cache.array[n_grid_index]
-            _, _, n_y_min_frac, n_y_max_frac = self._get_fractional_coords(n_level, n_global_id)
+            _, _, n_y_min_frac, n_y_max_frac = grid_cache.fract_coords[n_grid_index]
             processed_neighbours.append({
                 'index': n_grid_index,
                 'y_min_frac': n_y_min_frac,
@@ -707,9 +707,13 @@ class Grid(IGrid):
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             
     def _calc_grid_edges(self, grid_cache: GridCache):
+        # Pre-calculate fractional coordinates for each grid
+        for level, global_id in grid_cache.array:
+            grid_cache.fract_coords.append(self._get_fractional_coords(level, global_id))
+
         for grid_index, (level, global_id) in enumerate(grid_cache.array):
-            neighbours = grid_cache.grid_neighbours[grid_index]
-            grid_x_min_frac, grid_x_max_frac, grid_y_min_frac, grid_y_max_frac = self._get_fractional_coords(level, global_id)
+            neighbours = grid_cache.neighbours[grid_index]
+            grid_x_min_frac, grid_x_max_frac, grid_y_min_frac, grid_y_max_frac = grid_cache.fract_coords[grid_index]
             
             north_neighbours = list(neighbours[EdgeCode.NORTH])
             self._calc_horizontal_edges(grid_cache, grid_index, level, global_id, north_neighbours, EdgeCode.NORTH, EdgeCode.SOUTH, grid_y_max_frac)
@@ -725,10 +729,16 @@ class Grid(IGrid):
 
     def _parse_topology(self, grid_cache: GridCache):
         # Step 1: Calculate all grid neighbours
+        current_time = time.time()
         self._find_grid_neighbours(grid_cache)
-        
+        print(f'Grid neighbour calculation took {time.time() - current_time:.2f} seconds')
+
         # Step 2: Calculate all grid edges
+        current_time = time.time()
         self._calc_grid_edges(grid_cache)
+        print(f'Grid edge calculation took {time.time() - current_time:.2f} seconds')
+        
+        print(f'Find grid edges: {len(self._edge_index_cache)} edges')
 
     def merge(self):
         # Iterate all patches to process the meta overview
@@ -740,7 +750,6 @@ class Grid(IGrid):
         # Find all active grids
         active_grid_info = self._find_all_active_grids()
         grid_cache = GridCache(active_grid_info)
-        print(f'Active grid info count: {len(grid_cache)}')
         
         # Parse topology information
         self._parse_topology(grid_cache)
@@ -961,6 +970,9 @@ def _batch_process_overview_worker(
     end = min(batch_byte_offset + batch_size, mm.size())
     batch = mm[batch_byte_offset:end]
     active_grid_info: bytearray = bytearray()
+    count = 0
+    for i in range(0, len(batch), ov_byte_length):
+        count += 1
     for i in range(0, len(batch), ov_byte_length):
         ov_bytes_i = batch[i:i + ov_byte_length]
         ov = Overview.create(ov_bytes_i)
@@ -971,7 +983,7 @@ def _batch_process_overview_worker(
         
         active_grid_info += _process_overview(
             ov,
-            batch_byte_offset // ov_byte_length,
+            (batch_byte_offset + i) // ov_byte_length,
             ov_offset,
             meta_level_info,
             subdivide_rules,
