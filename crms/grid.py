@@ -28,26 +28,24 @@ WORKER_PATCH_OBJ = None
 WORKER_MMAP_OBJ = None
 WORKER_FILE_HANDLE = None
 
-BITS_DIRECTION = 1          # Direction [ 0 : v | 1 : u ]
-BITS_RANGE_COMPONENT = 16   # For min_numerator, min_denominator, max_numerator, max_denominator (UINT16)
-
-ADJACENT_CHECK_NORTH = lambda local_id, sub_width, sub_height: local_id < sub_width
-ADJACENT_CHECK_WEST = lambda local_id, sub_width, sub_height: local_id % sub_width == sub_width - 1
-ADJACENT_CHECK_SOUTH = lambda local_id, sub_width, sub_height: local_id >= sub_width * (sub_height - 1)
-ADJACENT_CHECK_EAST = lambda local_id, sub_width, sub_height: local_id % sub_width == 0
-
 EDGE_CODE_INVALID = -1
 class EdgeCode(IntEnum):
     NORTH = 0b00  # 0
     WEST  = 0b01  # 1
     SOUTH = 0b10  # 2
     EAST  = 0b11  # 3
+    
 TOGGLE_EDGE_CODE_MAP = {
     EdgeCode.NORTH: EdgeCode.SOUTH,
     EdgeCode.WEST: EdgeCode.EAST,
     EdgeCode.SOUTH: EdgeCode.NORTH,
     EdgeCode.EAST: EdgeCode.WEST
 }
+
+ADJACENT_CHECK_NORTH = lambda local_id, sub_width, sub_height: local_id < sub_width
+ADJACENT_CHECK_EAST = lambda local_id, sub_width, sub_height: local_id % sub_width == 0
+ADJACENT_CHECK_WEST = lambda local_id, sub_width, sub_height: local_id % sub_width == sub_width - 1
+ADJACENT_CHECK_SOUTH = lambda local_id, sub_width, sub_height: local_id >= sub_width * (sub_height - 1)
 
 class Overview:
     def __init__(self, size):
@@ -107,8 +105,8 @@ class GridCache:
     def __init__(self, data: bytes):
         if len(data) % 9 != 0:
             raise ValueError('Data must be a multiple of 9 bytes long')
-        self._data = data
-        self._len = len(self._data) // 9
+        self.data = data
+        self._len = len(self.data) // 9
         
         self.array = self._ArrayView(self)
         self.map = {index : i for i, index in enumerate(self.array)}
@@ -126,11 +124,24 @@ class GridCache:
     
     def _decode_at_index(self, index: int) -> tuple[int, int]:
         start = index * 9
-        subdata = self._data[start : start + 9]
-        return struct.unpack('>BQ', subdata)
+        subdata = self.data[start : start + 9]
+        return struct.unpack('!BQ', subdata)
 
     def has_grid(self, level: int, global_id: int) -> bool:
         return (level, global_id) in self.map
+
+    def slice_grids(self, start_index: int, length: int) -> bytes:
+        if start_index < 0 or start_index > self._len:
+            raise IndexError('Index out of bounds')
+        start = start_index * 9
+        end = min(start + length * 9, self._len * 9)
+        return self.data[start:end]
+    
+    def slice_edges(self, start_index: int, length: int) -> bytes:
+        if start_index < 0 or start_index > self._len:
+            raise IndexError('Index out of bounds')
+        end_index = min(start_index + length, self._len)
+        return self.edges[start_index : end_index]
 
 @cc.iicrm
 class Grid(IGrid):
@@ -186,8 +197,10 @@ class Grid(IGrid):
         
         self.patch_paths = [
             Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
-            # Path('resource', 'topo', 'schemas', '1', 'patches', '5')
+            Path('resource', 'topo', 'schemas', '1', 'patches', '5')
         ]
+
+        self.grid_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'grid_records.bin')
 
         # Initialize cache
         self._edge_index_cache: list[bytes] = []
@@ -739,6 +752,29 @@ class Grid(IGrid):
         print(f'Grid edge calculation took {time.time() - current_time:.2f} seconds')
         
         print(f'Find grid edges: {len(self._edge_index_cache)} edges')
+    
+    def _create_grid_record(self, grid_cache: GridCache):
+        batch_size = 10000
+        batch_args = [
+            (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size))
+            for i in range(0, len(grid_cache), batch_size)
+        ]
+        batch_func = partial(
+            _batch_grid_records_worker,
+            bbox=self.bounds,
+            meta_level_info=self.meta_level_info
+        )
+        
+        num_processes = min(os.cpu_count(), len(batch_args))
+        with mp.Pool(processes=num_processes) as pool:
+            grid_records_list = pool.map(batch_func, batch_args)
+        grid_records = bytearray()
+        for grid_records_chunk in grid_records_list:
+            grid_records += grid_records_chunk
+        
+        with open(self.grid_record_path, 'wb') as f:
+            f.write(grid_records)
+        print(f'Grid records created at {self.grid_record_path}')
 
     def merge(self):
         # Iterate all patches to process the meta overview
@@ -753,6 +789,9 @@ class Grid(IGrid):
         
         # Parse topology information
         self._parse_topology(grid_cache)
+        
+        # Create records
+        self._create_grid_record(grid_cache)
         
         
 # Helpers ##################################################
@@ -916,7 +955,7 @@ def _get_children_global_ids(
 
 def _encode_grid_to_bytes(level: int, global_id: int) -> bytes:
     """Encode level (uint8) and global_id (uint64) into bytes"""
-    return struct.pack('>BQ', level, global_id)
+    return struct.pack('!BQ', level, global_id)
 
 def _process_overview(
         ov: Overview,
@@ -997,3 +1036,93 @@ def _simplifyFraction(n: int, m: int) -> list[int]:
     while b != 0:
         a, b = b, a % b
     return [n // a, m // a]
+
+def _lerp(a: float, b: float, t: float) -> float:
+    t = min(max(t, 0.0), 1.0)
+    return (1.0 - t) * a + t * b
+
+def _get_grid_coordinates(level: int, global_id: int, bbox: list[float], meta_level_info: list[dict[str, int]]) -> tuple[float, float, float, float]:
+    width = float(meta_level_info[level]['width'])
+    height = float(meta_level_info[level]['height'])
+    u = float(global_id % width)
+    v = float(global_id // width)
+    min_xs = _lerp(bbox[0], bbox[2], u / width)
+    min_ys = _lerp(bbox[1], bbox[3], v / height)
+    max_xs = _lerp(bbox[0], bbox[2], (u + 1) / width)
+    max_ys = _lerp(bbox[1], bbox[3], (v + 1) / height)
+    return min_xs, min_ys, max_xs, max_ys
+
+def _generate_grid_record(
+    index: int,
+    key: bytes, edges: list[set[int]],
+    bbox: list[float], meta_level_info: list[dict[str, int]],
+) -> bytearray:
+    level, global_id = struct.unpack('>BQ', key)
+    min_xs, min_ys, max_xs, max_ys = _get_grid_coordinates(level, global_id, bbox, meta_level_info)
+    
+    unpacked_info = [
+        index + 1,                                                      # index (1-based)
+        len(edges[EdgeCode.WEST]),                                      # west edge count
+        len(edges[EdgeCode.EAST]),                                      # east edge count
+        len(edges[EdgeCode.SOUTH]),                                     # south edge count
+        len(edges[EdgeCode.NORTH]),                                     # north edge count
+        *[edge_index + 1 for edge_index in edges[EdgeCode.WEST]],       # west edge indices (1-based)
+        *[edge_index + 1 for edge_index in edges[EdgeCode.EAST]],       # east edge indices (1-based)
+        *[edge_index + 1 for edge_index in edges[EdgeCode.SOUTH]],      # south edge indices (1-based)
+        *[edge_index + 1 for edge_index in edges[EdgeCode.NORTH]],      # north edge indices (1-based)
+        min_xs, min_ys, max_xs, max_ys                                  # grid coordinates
+    ]
+    
+    unpacked_info_type = [
+        'Q',                                    # index (uint64)
+        'B',                                    # west edge count (uint8)
+        'B',                                    # east edge count (uint8)
+        'B',                                    # south edge count (uint8)
+        'B',                                    # north edge count (uint8)
+        *['Q'] * len(edges[EdgeCode.WEST]),     # west edge indices (list of uint64)
+        *['Q'] * len(edges[EdgeCode.EAST]),     # east edge indices (list of uint64)
+        *['Q'] * len(edges[EdgeCode.SOUTH]),    # south edge indices (list of uint64)
+        *['Q'] * len(edges[EdgeCode.NORTH]),    # north edge indices (list of uint64)
+        'd', 'd', 'd', 'd'                      # grid coordinates (double)
+    ]
+    
+    packed_record = bytearray()
+    for value, value_type in zip(unpacked_info, unpacked_info_type):
+        if value_type == 'Q':  # uint64
+            packed_record.extend(struct.pack('!Q', value))
+        elif value_type == 'B':  # uint8
+            packed_record.extend(struct.pack('!B', value))
+        elif value_type == 'd':  # double
+            packed_record.extend(struct.pack('!d', value))
+
+    return packed_record
+
+def _batch_grid_records_worker(
+    args: tuple[bytes, list[list[set[int]]]],
+    bbox: list[float], meta_level_info: list[dict[str, int]]
+) -> bytearray:
+    grid_data, grid_edges = args
+    
+    records = bytearray()
+    grid_count = len(grid_data) // 9 # each grid has 9 bytes (level: uint8 + global_id: uint64)
+    for i in range(grid_count):
+        start = i * 9
+        end = start + 9
+        key = grid_data[start:end]
+        
+        # Get edges for this grid
+        edges = grid_edges[i]
+        
+        # Generate grid record
+        record =  _generate_grid_record(i, key, edges, bbox, meta_level_info)
+        length_prefix = struct.pack('!I', len(record)) 
+        
+        records += length_prefix
+        records += record
+
+    return records
+
+def _distance2D(x1: float, y1: float, x2: float, y2: float) -> float:
+    dx = x1 - x2
+    dy = y1 - y2
+    return math.sqrt(dx * dx + dy * dy)
