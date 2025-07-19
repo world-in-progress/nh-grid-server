@@ -196,7 +196,7 @@ class Grid(IGrid):
         self.meta_level_info: list[dict[str, int]] = [{'width': 1, 'height': 1}]
         
         self.patch_paths = [
-            Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
+            # Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
             Path('resource', 'topo', 'schemas', '1', 'patches', '5')
         ]
 
@@ -762,7 +762,8 @@ class Grid(IGrid):
         batch_func = partial(
             _batch_grid_records_worker,
             bbox=self.bounds,
-            meta_level_info=self.meta_level_info
+            meta_level_info=self.meta_level_info,
+            grid_info=self.grid_info
         )
         
         num_processes = min(os.cpu_count(), len(batch_args))
@@ -793,7 +794,45 @@ class Grid(IGrid):
         # Create records
         self._create_grid_record(grid_cache)
         
-        
+        # Test
+        cursor = 0
+        with open(self.grid_record_path, 'r+b') as f:
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                for _ in range(10):
+                    print('-------------------------------')
+                    # Read the grid record bytes by cursor
+                    mm.seek(cursor)
+                    length_prefix = struct.unpack('!I', mm.read(4))[0]
+                    mm.seek(cursor + 4)
+                    data = mm.read(length_prefix)
+                    cursor += 4 + length_prefix
+
+                    # Get index, bounds and edge counts of the grid
+                    index, min_x, min_y, max_x, max_y, left_edge_num, right_edge_num, bottom_edge_num, top_edge_num = struct.unpack('!QddddBBBB', data[:44])
+                    print(f'Index: {index}, Bounds: ({min_x}, {min_y}, {max_x}, {max_y})')
+                    print(f'Left Edge: {left_edge_num}, Right Edge: {right_edge_num}, Bottom Edge: {bottom_edge_num}, Top Edge: {top_edge_num}')
+                    
+                    # Unpack edges
+                    total_edge_num = left_edge_num + right_edge_num + bottom_edge_num + top_edge_num
+                    edge_coords_types = '!' + 'Q' * total_edge_num
+                    edges = list(struct.unpack(edge_coords_types, data[44:]))
+                    
+                    # Calculate edge starts
+                    left_edge_start = 0
+                    right_edge_start = left_edge_num
+                    bottom_edge_start = right_edge_start + right_edge_num
+                    top_edge_start = bottom_edge_start + bottom_edge_num
+                    
+                    # Get edges for each side
+                    left_edges = edges[left_edge_start:right_edge_start]
+                    right_edges = edges[right_edge_start:bottom_edge_start]
+                    bottom_edges = edges[bottom_edge_start:top_edge_start]
+                    top_edges = edges[top_edge_start:]
+                    print(f'Left Edges: {left_edges}')
+                    print(f'Right Edges: {right_edges}')
+                    print(f'Bottom Edges: {bottom_edges}')
+                    print(f'Top Edges: {top_edges}')
+
 # Helpers ##################################################
 
 def _encode_index(level: int, global_id: int) -> np.uint64:
@@ -1037,31 +1076,30 @@ def _simplifyFraction(n: int, m: int) -> list[int]:
         a, b = b, a % b
     return [n // a, m // a]
 
-def _lerp(a: float, b: float, t: float) -> float:
-    t = min(max(t, 0.0), 1.0)
-    return (1.0 - t) * a + t * b
-
-def _get_grid_coordinates(level: int, global_id: int, bbox: list[float], meta_level_info: list[dict[str, int]]) -> tuple[float, float, float, float]:
-    width = float(meta_level_info[level]['width'])
-    height = float(meta_level_info[level]['height'])
-    u = float(global_id % width)
-    v = float(global_id // width)
-    min_xs = _lerp(bbox[0], bbox[2], u / width)
-    min_ys = _lerp(bbox[1], bbox[3], v / height)
-    max_xs = _lerp(bbox[0], bbox[2], (u + 1) / width)
-    max_ys = _lerp(bbox[1], bbox[3], (v + 1) / height)
+def _get_grid_coordinates(level: int, global_id: int, bbox: list[float], meta_level_info: list[dict[str, int]], grid_info: list[list[float]]) -> tuple[float, float, float, float]:
+    width = meta_level_info[level]['width']
+    
+    u = global_id % width
+    v = global_id // width
+    grid_width, grid_height = grid_info[level-1]
+    
+    min_xs = bbox[0] + u * grid_width
+    min_ys = bbox[1] + v * grid_height
+    max_xs = min_xs + grid_width
+    max_ys = min_ys + grid_height
     return min_xs, min_ys, max_xs, max_ys
 
 def _generate_grid_record(
     index: int,
-    key: bytes, edges: list[set[int]],
-    bbox: list[float], meta_level_info: list[dict[str, int]],
+    key: bytes, edges: list[set[int]], bbox: list[float],
+    meta_level_info: list[dict[str, int]], grid_info: list[list[float]]
 ) -> bytearray:
     level, global_id = struct.unpack('>BQ', key)
-    min_xs, min_ys, max_xs, max_ys = _get_grid_coordinates(level, global_id, bbox, meta_level_info)
-    
+    min_xs, min_ys, max_xs, max_ys = _get_grid_coordinates(level, global_id, bbox, meta_level_info, grid_info)
+
     unpacked_info = [
         index + 1,                                                      # index (1-based)
+        min_xs, min_ys, max_xs, max_ys,                                 # grid coordinates
         len(edges[EdgeCode.WEST]),                                      # west edge count
         len(edges[EdgeCode.EAST]),                                      # east edge count
         len(edges[EdgeCode.SOUTH]),                                     # south edge count
@@ -1070,11 +1108,11 @@ def _generate_grid_record(
         *[edge_index + 1 for edge_index in edges[EdgeCode.EAST]],       # east edge indices (1-based)
         *[edge_index + 1 for edge_index in edges[EdgeCode.SOUTH]],      # south edge indices (1-based)
         *[edge_index + 1 for edge_index in edges[EdgeCode.NORTH]],      # north edge indices (1-based)
-        min_xs, min_ys, max_xs, max_ys                                  # grid coordinates
     ]
     
     unpacked_info_type = [
         'Q',                                    # index (uint64)
+        'd', 'd', 'd', 'd',                     # grid coordinates (double)
         'B',                                    # west edge count (uint8)
         'B',                                    # east edge count (uint8)
         'B',                                    # south edge count (uint8)
@@ -1083,7 +1121,6 @@ def _generate_grid_record(
         *['Q'] * len(edges[EdgeCode.EAST]),     # east edge indices (list of uint64)
         *['Q'] * len(edges[EdgeCode.SOUTH]),    # south edge indices (list of uint64)
         *['Q'] * len(edges[EdgeCode.NORTH]),    # north edge indices (list of uint64)
-        'd', 'd', 'd', 'd'                      # grid coordinates (double)
     ]
     
     packed_record = bytearray()
@@ -1098,8 +1135,8 @@ def _generate_grid_record(
     return packed_record
 
 def _batch_grid_records_worker(
-    args: tuple[bytes, list[list[set[int]]]],
-    bbox: list[float], meta_level_info: list[dict[str, int]]
+    args: tuple[bytes, list[list[set[int]]]], bbox: list[float],
+    meta_level_info: list[dict[str, int]], grid_info: list[list[float]]
 ) -> bytearray:
     grid_data, grid_edges = args
     
@@ -1114,7 +1151,7 @@ def _batch_grid_records_worker(
         edges = grid_edges[i]
         
         # Generate grid record
-        record =  _generate_grid_record(i, key, edges, bbox, meta_level_info)
+        record =  _generate_grid_record(i, key, edges, bbox, meta_level_info, grid_info)
         length_prefix = struct.pack('!I', len(record)) 
         
         records += length_prefix
