@@ -20,6 +20,7 @@ from contextlib import contextmanager
 
 from icrms.igrid import IGrid, PatchInfo
 from crms.patch import Patch, GridSchema
+from crms.solution import HydroElement
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ class Grid(IGrid):
         
         self.patch_paths = [
             # Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
-            Path('resource', 'topo', 'schemas', '1', 'patches', '5')
+            Path('resource', 'topo', 'schemas', '1', 'patches', '7')
         ]
 
         self.grid_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'grid_records.bin')
@@ -807,31 +808,28 @@ class Grid(IGrid):
                     data = mm.read(length_prefix)
                     cursor += 4 + length_prefix
 
-                    # Get index, bounds and edge counts of the grid
-                    index, min_x, min_y, max_x, max_y, left_edge_num, right_edge_num, bottom_edge_num, top_edge_num = struct.unpack('!QddddBBBB', data[:44])
-                    print(f'Index: {index}, Bounds: ({min_x}, {min_y}, {max_x}, {max_y})')
-                    print(f'Left Edge: {left_edge_num}, Right Edge: {right_edge_num}, Bottom Edge: {bottom_edge_num}, Top Edge: {top_edge_num}')
+                    e = HydroElement(data)
+                    ne = e.ne
                     
-                    # Unpack edges
-                    total_edge_num = left_edge_num + right_edge_num + bottom_edge_num + top_edge_num
-                    edge_coords_types = '!' + 'Q' * total_edge_num
-                    edges = list(struct.unpack(edge_coords_types, data[44:]))
+                    index = ne[0]
+                    left_edge_num = ne[1]
+                    right_edge_num = ne[2]
+                    bottom_edge_num = ne[3]
+                    center = ne[-4:-1]
+                    type = ne[-1]
                     
-                    # Calculate edge starts
                     left_edge_start = 0
-                    right_edge_start = left_edge_num
+                    right_edge_start = left_edge_start + left_edge_num
                     bottom_edge_start = right_edge_start + right_edge_num
                     top_edge_start = bottom_edge_start + bottom_edge_num
                     
-                    # Get edges for each side
+                    edges = ne[5:-4]
                     left_edges = edges[left_edge_start:right_edge_start]
                     right_edges = edges[right_edge_start:bottom_edge_start]
                     bottom_edges = edges[bottom_edge_start:top_edge_start]
                     top_edges = edges[top_edge_start:]
-                    print(f'Left Edges: {left_edges}')
-                    print(f'Right Edges: {right_edges}')
-                    print(f'Bottom Edges: {bottom_edges}')
-                    print(f'Top Edges: {top_edges}')
+                    
+                    print(f'Element info: Index: {index}, Type: {type}, Center: {center}, Left Edges: {left_edges}, Right Edges: {right_edges}, Bottom Edges: {bottom_edges}, Top Edges: {top_edges}')
 
 # Helpers ##################################################
 

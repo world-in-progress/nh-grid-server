@@ -8,23 +8,23 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     
-    # import os
-    # import sys
-    # if sys.platform.startswith('win') or sys.platform.startswith('linux'):
-    #     venv_path = sys.prefix
-    #     os.environ['PROJ_LIB'] = os.path.join(venv_path, 'Lib', 'site-packages', 'osgeo', 'data', 'proj')
+    import os
+    import sys
+    if sys.platform.startswith('win') or sys.platform.startswith('linux'):
+        venv_path = sys.prefix
+        os.environ['PROJ_LIB'] = os.path.join(venv_path, 'Lib', 'site-packages', 'osgeo', 'data', 'proj')
     
-    # uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True, log_level='error')
+    uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True, log_level='error')
     
-    import time
-    from crms.grid import Grid
+    # import time
+    # from crms.grid import Grid
     
-    grid = Grid()
-    grid.create_meta_overview()
+    # grid = Grid()
+    # grid.create_meta_overview()
     
-    current_time = time.time()
+    # current_time = time.time()
     
-    grid.merge()
+    # grid.merge()
     
-    elapsed_time = time.time() - current_time
-    print(f"Patch processed in {elapsed_time:.2f} seconds")
+    # elapsed_time = time.time() - current_time
+    # print(f"Patch processed in {elapsed_time:.2f} seconds")
