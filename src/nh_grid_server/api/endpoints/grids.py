@@ -1,12 +1,11 @@
 import shutil
-import c_two as cc
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ...core.config import settings
-from ...schemas.grids import PatchNodeInfos
 from ...schemas.base import BaseResponse
-from ...core.bootstrapping_treeger import BT
+from ...schemas.grids import PatchNodeInfos
+from ...core.bootstrapping_treeger import BT, CRMDuration
 
 from icrms.igrid import IGrid
 
@@ -36,7 +35,8 @@ def create_grid(schema_name: str, grid_name: str, grid_patches: PatchNodeInfos):
             'workspace': str(grid_path)
         })
         
-        with BT.instance.connect(node_key, IGrid) as grid:
+        # Connect to the grid node and merge patches
+        with BT.instance.connect(node_key, IGrid, CRMDuration.Once) as grid:
             grid.merge()
     
     except Exception as e:

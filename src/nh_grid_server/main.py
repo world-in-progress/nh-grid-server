@@ -33,8 +33,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # close_current_project()
-    
     BT.instance.terminate()
     # await agent_client.cleanup()
 

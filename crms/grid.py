@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from crms.patch import Patch
-from crms.treeger import Treeger
 from icrms.igrid import IGrid
+from crms.treeger import Treeger
 from crms.solution import HydroElement, HydroSide
 
 load_dotenv()
@@ -157,7 +157,6 @@ class GridCache:
 @cc.iicrm
 class Grid(IGrid):
     def __init__(self, schema_path: str, workspace: str):
-        # self.schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
         self.workspace = Path(workspace)
         self.schema_path = Path(schema_path)
         self.meta_ov_path = self.workspace / 'meta_overview.bin'
@@ -209,11 +208,6 @@ class Grid(IGrid):
         with open(self.workspace / 'patches.json', 'r', encoding='utf-8') as f:
             data = json.load(f)
             self.patch_infos = PatchInfoList(**data).patches
-        
-        # self.patch_paths = [
-        #     # Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
-        #     Path('resource', 'topo', 'schemas', '1', 'patches', '7')
-        # ]
 
         # Initialize cache
         self._edge_index_cache: list[bytes] = []
@@ -260,12 +254,10 @@ class Grid(IGrid):
         self.first_level_width = self.meta_level_info[1]['width']
         self.first_level_height = self.meta_level_info[1]['height']
         
-        print(self.first_level_width, self.first_level_height)
-        
         # Create overview
         self.meta_ov_byte_length = self.first_level_width * self.first_level_height * self.ov_byte_length
         
-        # # Create meta overview file
+        # Create meta overview file
         with open(self.meta_ov_path, 'wb') as f:
             f.write(b'\x00' * self.meta_ov_byte_length)
 
@@ -416,10 +408,10 @@ class Grid(IGrid):
         u = global_id % width
         v = global_id // width
         
-        x_min_frac = _simplifyFraction(u, width)
-        x_max_frac = _simplifyFraction(u + 1, width)
-        y_min_frac = _simplifyFraction(v, height)
-        y_max_frac = _simplifyFraction(v + 1, height)
+        x_min_frac = _simplify_fraction(u, width)
+        x_max_frac = _simplify_fraction(u + 1, width)
+        y_min_frac = _simplify_fraction(v, height)
+        y_max_frac = _simplify_fraction(v + 1, height)
         
         return x_min_frac, x_max_frac, y_min_frac, y_max_frac
 
@@ -1046,7 +1038,7 @@ def _batch_process_overview_worker(
         )
     return active_grid_info
 
-def _simplifyFraction(n: int, m: int) -> list[int]:
+def _simplify_fraction(n: int, m: int) -> list[int]:
     """Find the greatest common divisor of two numbers"""
     a, b = n, m
     while b != 0:

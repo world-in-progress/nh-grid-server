@@ -1,12 +1,13 @@
-import logging
 import socket
-from fastapi import APIRouter, Body, HTTPException, Query
-from ...schemas.proxy import DiscoverBody, DiscoverResponse, RelayResponse
-from ...core.bootstrapping_treeger import BT
-from ...core.config import settings
-from ...schemas.project import ResourceCRMStatus
+import logging
 import c_two as cc
+from fastapi import APIRouter, Body, HTTPException, Query
+
+from ...core.config import settings
 from starlette.responses import Response
+from ...core.bootstrapping_treeger import BT
+from ...schemas.project import ResourceCRMStatus
+from ...schemas.proxy import DiscoverBody, DiscoverResponse, RelayResponse
 
 logger = logging.getLogger(__name__)
 
@@ -73,4 +74,3 @@ async def relay(node_key: str=Query(..., description='node_key'), body: bytes=Bo
     except Exception as e:
         logger.error(f'Failed to relay message: {str(e)}')
         raise HTTPException(status_code=500, detail=f'Failed to relay message: {str(e)}')
-
