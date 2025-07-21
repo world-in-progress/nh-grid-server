@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ...core.config import settings
-from ...schemas.grids import GridPatches
+from ...schemas.grids import PatchNodeInfos
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT
 
@@ -15,7 +15,7 @@ from icrms.igrid import IGrid
 router = APIRouter(prefix='/grids', tags=['grids-related apis'])
 
 @router.post('/{schema_name}/{grid_name}')
-def create_grid(schema_name: str, grid_name: str, grid_patches: GridPatches):
+def create_grid(schema_name: str, grid_name: str, grid_patches: PatchNodeInfos):
     grid_path = Path(settings.GRID_SCHEMA_DIR, schema_name, 'grids', grid_name)
     # if grid_path.exists():
     #     raise HTTPException(status_code=400, detail=f'Grid {grid_name} already exists in schema {schema_name}')
