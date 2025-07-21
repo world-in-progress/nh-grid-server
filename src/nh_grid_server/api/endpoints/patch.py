@@ -3,12 +3,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ...schemas.grid import GridMeta
+from ...schemas.crm import CRMStatus
 from ...schemas.patch import PatchMeta
 from ...schemas.base import BaseResponse
-from ...schemas.crm import CRMStatus
-from icrms.itreeger import ReuseAction, CRMDuration
 from ...core.bootstrapping_treeger import BT
 from ...core.config import settings, APP_CONTEXT
+
+from icrms.itreeger import ReuseAction, CRMDuration
 
 # APIs for grid patch ################################################
 

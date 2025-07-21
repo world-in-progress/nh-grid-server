@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     HTTPS_PROXY: str
     
     # Treeger meta configuration
+    SCENARIO_META_PATH: str
     TREEGER_SERVER_ADDRESS: str = 'thread://gridman_bstreeger'
-    SCENARIO_META_PATH: str = str(ROOT_DIR / 'scenario.meta.yaml')
     
     # Grid schema related constants
     GRID_SCHEMA_DIR: str = 'resource/topo/schemas/'

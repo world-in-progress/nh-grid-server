@@ -303,6 +303,9 @@ class IPatch:
     def get_schema(self) -> GridSchema:
         ...
     
+    def get_local_id(self, level: int, global_id: int) -> int:
+        ...
+    
     def subdivide_grids(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
         
@@ -312,22 +315,13 @@ class IPatch:
     def get_parents(self, levels: list[int], global_ids: list[int]) -> tuple[list[int], list[int]]:
         ...
         
-    def get_status(self, level: int, global_id: int) -> int:
-        ...
-
-    def get_grid_infos(self, level: int, global_ids: list[int]) -> list[GridAttribute]:
+    def get_status(self, index: int) -> int:
         ...
     
     def get_active_grid_infos(self) -> tuple[list[int], list[int]]:
         ...
     
     def get_deleted_grid_infos(self) -> tuple[list[int], list[int]]:
-        ...
-    
-    def get_grid_center(self, level: int, global_id: int) -> tuple[float, float]:
-        ...
-    
-    def get_multi_grid_centers(self, levels: list[int], global_ids: list[int]) -> list[tuple[float, float]]:
         ...
     
     def get_multi_grid_bboxes(self, levels: list[int], global_ids: list[int]) -> list[float]:

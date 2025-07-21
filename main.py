@@ -14,7 +14,7 @@ if __name__ == "__main__":
         venv_path = sys.prefix
         os.environ['PROJ_LIB'] = os.path.join(venv_path, 'Lib', 'site-packages', 'osgeo', 'data', 'proj')
     
-    uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True, log_level='error')
+    uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True)
     
     # import time
     # from crms.grid import Grid

@@ -5,25 +5,28 @@ import json
 import mmap
 import struct
 import atexit
-import sqlite3
 import logging
 import c_two as cc
 import numpy as np
-import pandas as pd
 import multiprocessing as mp
 
 from pathlib import Path
 from enum import IntEnum
 from typing import Callable
 from functools import partial
-from contextlib import contextmanager
+from dotenv import load_dotenv
+from pydantic import BaseModel
 
 from crms.patch import Patch
-from icrms.igrid import IGrid, PatchInfo
+from crms.treeger import Treeger
+from icrms.igrid import IGrid
 from crms.solution import HydroElement, HydroSide
 
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+SCENARIO_META_PATH = os.getenv('SCENARIO_META_PATH')
 
 WORKER_PATCH_OBJ = None
 WORKER_MMAP_OBJ = None
@@ -47,6 +50,13 @@ ADJACENT_CHECK_NORTH = lambda local_id, sub_width, sub_height: local_id < sub_wi
 ADJACENT_CHECK_EAST = lambda local_id, sub_width, sub_height: local_id % sub_width == 0
 ADJACENT_CHECK_WEST = lambda local_id, sub_width, sub_height: local_id % sub_width == sub_width - 1
 ADJACENT_CHECK_SOUTH = lambda local_id, sub_width, sub_height: local_id >= sub_width * (sub_height - 1)
+
+class PatchInfo(BaseModel):
+    node_key: str
+    treeger_address: str
+
+class PatchInfoList(BaseModel):
+    patches: list[PatchInfo]
 
 class Overview:
     def __init__(self, size):
@@ -146,28 +156,27 @@ class GridCache:
 
 @cc.iicrm
 class Grid(IGrid):
-    # def __init__(self, workspace: str):
-    #     self.path = Path(workspace)
-    #     self.db_path = self.path / 'grid.db'
-    #     self.path.mkdir(parents=True, exist_ok=True)
-    #     self._init_db()
-    
-    def __init__(self):
-        self.schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
-        schema = json.load(open(self.schema_path, 'r'))
+    def __init__(self, schema_path: str, workspace: str):
+        # self.schema_path = Path('resource', 'topo', 'schemas', '1', 'schema.json')
+        self.workspace = Path(workspace)
+        self.schema_path = Path(schema_path)
+        self.meta_ov_path = self.workspace / 'meta_overview.bin'
+        self.grid_record_path = self.workspace / 'grid_records.bin'
+        self.edge_record_path = self.workspace / 'edge_records.bin'
         
+        # Init workspace
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        
+        # Init schema info
+        schema = json.load(open(self.schema_path, 'r'))
         self.epsg: int = schema['epsg']
         self.grid_info: list[list[float]] = schema['grid_info']
         self.first_level_grid_size: list[float] = self.grid_info[0]
         self.first_level_width = 0
         self.first_level_height = 0
         
+        # Init meta overview properties
         self.meta_ov_byte_length = 0
-        self.meta_ov_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'meta_overview.bin')
-        self.meta_ov_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.meta_ov_path.exists():
-            self.meta_ov_path.unlink()
-
         self.ov_info: list[tuple[list[int], int]] = []
         for i in range(len(self.grid_info)):
             if i == 0:
@@ -190,113 +199,37 @@ class Grid(IGrid):
             _, size = info
             self.ov_offset.append(self.ov_offset[-1] + size)
         
+        # Init bounds, subdivide_rules and meta_level_info, which will be updated later
         inf, neg_inf = float('inf'), float('-inf')
         self.bounds = [inf, inf, neg_inf, neg_inf]  # [min_x, min_y, max_x, max_y]
-        
         self.subdivide_rules: list[list[int]] = []
         self.meta_level_info: list[dict[str, int]] = [{'width': 1, 'height': 1}]
         
-        self.patch_paths = [
-            # Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
-            Path('resource', 'topo', 'schemas', '1', 'patches', '7')
-        ]
-
-        self.grid_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'grid_records.bin')
-        self.edge_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'edge_records.bin')
+        # Get all patch info
+        with open(self.workspace / 'patches.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            self.patch_infos = PatchInfoList(**data).patches
+        
+        # self.patch_paths = [
+        #     # Path('resource', 'topo', 'schemas', '1', 'patches', '3'),
+        #     Path('resource', 'topo', 'schemas', '1', 'patches', '7')
+        # ]
 
         # Initialize cache
         self._edge_index_cache: list[bytes] = []
         self._edge_index_dict: dict[int, bytes] = {}
         self._edge_adj_grids_indices: list[list[int | None]] = [] # for each edge, the list of adjacent grid indices, among [grid_a, grid_b], grid_a must be the north or west grid
 
-    def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS grid_patches (
-                    node_key TEXT,
-                    treeger_address TEXT,
-                    PRIMARY KEY (node_key, treeger_address)
-                )
-            """)
-            conn.commit()
-    
-    @contextmanager
-    def _connect_db(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # enable column access by name
-        try:
-            yield conn
-        finally:
-            conn.close()
-    
-    def has_patch(self, patch_info: PatchInfo) -> bool:
-        with self._connect_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT 1 FROM grid_patches 
-                WHERE node_key = ? AND treeger_address = ?
-            """, (patch_info.node_key, patch_info.treeger_address))
-            return cursor.fetchone() is not None
-
-    def add_patch(self, patch_info: PatchInfo):
-        if self.has_patch(patch_info):
-            return
-        
-        with self._connect_db() as conn:
-            conn.execute("""
-                INSERT INTO grid_patches (node_key, treeger_address)
-                VALUES (?, ?)
-            """, (patch_info.node_key, patch_info.treeger_address))
-            conn.commit()
-
-    def remove_patch(self, patch_info: PatchInfo):
-        if not self.has_patch(patch_info):
-            return
-        
-        with self._connect_db() as conn:
-            conn.execute("""
-                DELETE FROM grid_patches 
-                WHERE node_key = ? AND treeger_address = ?
-            """, (patch_info.node_key, patch_info.treeger_address))
-            conn.commit()
-    
-    def is_not_empty(self) -> bool:
-        with self._connect_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM grid_patches")
-            count = cursor.fetchone()[0]
-            return count > 0
-    
-    def list_patches(self) -> list[PatchInfo]:
-        with self._connect_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT node_key, treeger_address FROM grid_patches")
-            rows = cursor.fetchall()
-            return [PatchInfo(node_key=row['node_key'], treeger_address=row['treeger_address']) for row in rows]
-    
-    def clear_patches(self):
-        with self._connect_db() as conn:
-            conn.execute("DELETE FROM grid_patches")
-            conn.commit()
-    
-    def set_patches(self, patch_infos: list[PatchInfo]):
-        if self.is_not_empty():
-            self.clear_patches()
-            
-        for patch_info in patch_infos:
-            self.add_patch(patch_info)
-    
-    def create_meta_overview(self):
+    def _create_meta_overview(self, treeger: Treeger):
         # Update bounds
-        for patch_path in self.patch_paths:
-            meta_file = Path(patch_path, 'patch.meta.json')
-            tp_schema = json.load(open(meta_file, 'r'))
-            tp_bounds: list[float] = tp_schema['bounds']
-            self.bounds[0] = min(self.bounds[0], tp_bounds[0])
-            self.bounds[1] = min(self.bounds[1], tp_bounds[1])
-            self.bounds[2] = max(self.bounds[2], tp_bounds[2])
-            self.bounds[3] = max(self.bounds[3], tp_bounds[3])
-        
+        for patch_info in self.patch_infos:
+            patch = treeger.instantiate_crm(patch_info.node_key, Patch)
+            schema = patch.get_schema()
+            self.bounds[0] = min(self.bounds[0], schema.bounds[0])
+            self.bounds[1] = min(self.bounds[1], schema.bounds[1])
+            self.bounds[2] = max(self.bounds[2], schema.bounds[2])
+            self.bounds[3] = max(self.bounds[3], schema.bounds[3])
+
         # Update subdivide rules
         self.subdivide_rules = [
             [
@@ -336,8 +269,8 @@ class Grid(IGrid):
         with open(self.meta_ov_path, 'wb') as f:
             f.write(b'\x00' * self.meta_ov_byte_length)
 
-    def process_patch(self, patch_path: str):
-        patch = Patch(self.schema_path, patch_path)
+    def _process_patch(self, treeger: Treeger, patch_info: PatchInfo):
+        patch = treeger.instantiate_crm(patch_info.node_key, Patch)
         patch_width = patch.level_info[1]['width']
         patch_height = patch.level_info[1]['height']
         
@@ -359,8 +292,6 @@ class Grid(IGrid):
         num_processes = min(os.cpu_count(), len(batch_args))
         with mp.Pool(processes=num_processes, initializer=_init_chunk_overview_worker, initargs=(patch, self.meta_ov_path)) as pool:
             pool.map(batch_func, batch_args)
-
-        print(f'Process patch "{patch_path}" done.')
 
     def _find_all_active_grids(self) -> list[int]:
         batch_size = 1000 * self.ov_byte_length
@@ -802,12 +733,16 @@ class Grid(IGrid):
         print(f'Edge records created at {self.edge_record_path}')
 
     def merge(self):
+        # Get treeger
+        treeger = Treeger(SCENARIO_META_PATH)
+        
+        # Create meta overview
+        self._create_meta_overview(treeger)
+
         # Iterate all patches to process the meta overview
-        for patch_path in self.patch_paths:
-            if not patch_path.exists():
-                continue
-            self.process_patch(patch_path)
-            
+        for patch_info in self.patch_infos:
+            self._process_patch(treeger, patch_info)
+
         # Find all active grids
         active_grid_info = self._find_all_active_grids()
         grid_cache = GridCache(active_grid_info)

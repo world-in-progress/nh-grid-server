@@ -9,9 +9,12 @@ import threading
 import subprocess
 import c_two as cc
 from pathlib import Path
+from typing import TypeVar, Type
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNode, ScenarioNodeType, SceneNodeInfo, SceneNodeMeta, ScenarioNodeDescription, CRMDuration
+
+T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
 
@@ -531,3 +534,16 @@ class Treeger(ITreeger):
             return {
                 'nodes': running_nodes,
             }
+    
+    def instantiate_crm(self, node_key: str, proxy_crm_class: Type[T]) -> T | None:
+        """Can only be used in the same thread by other CRM"""
+        # TODO: make icrm proxy for remote CRM
+        with self.lock:
+            if not self._node_exists_in_db(node_key):
+                return None
+            else:
+                node = self._load_node_from_db(node_key)
+                if not node:
+                    return None
+                
+                return proxy_crm_class(**node.launch_params)
