@@ -58,7 +58,55 @@ class HydroElement:
             *self.bottom_edges,                             # bottom edge indices
             *self.top_edges,                                # top edge indices
             *self.center,                                   # center coordinates (x, y, z)
-            self.type,                                      # element type (0 for hydro default)
+            self.type,                                      # element type
+        ]
+
+class HydroSide:
+    def __init__(self, data: bytes):
+        # Unpack index, direction, bounds and adjacent grid indices
+        index, direction, min_x, min_y, max_x, max_y, grid_index_a, grid_index_b = struct.unpack('!QBddddQQ', data)
+        self.index = index
+        self.direction = direction
+        self.bounds = (min_x, min_y, max_x, max_y)
+        self.grid_index_a = grid_index_a
+        self.grid_index_b = grid_index_b
+        
+        # Default attributes (can be modified later)
+        self.altitude = -9999.0  # placeholder for altitude
+        self.type = 0            # default side type (0 for hydro default)
+    
+    @property
+    def length(self) -> float:
+        return (self.bounds[2] - self.bounds[0]) if self.direction == 1 else (self.bounds[3] - self.bounds[1])
+    
+    @property
+    def center(self) -> tuple[float, float, float]:
+        return (
+            (self.bounds[0] + self.bounds[2]) / 2.0,  # center x
+            (self.bounds[1] + self.bounds[3]) / 2.0,  # center y
+            self.altitude,                            # center z
+        )
+    
+    @property
+    def ns(self) -> list[int | float]:
+        left_grid_index, right_grid_index, bottom_grid_index, top_grid_index = 0, 0, 0, 0
+        if self.direction == 0: # vertical side
+            left_grid_index = self.grid_index_a if self.grid_index_a is not None else 0
+            right_grid_index = self.grid_index_b if self.grid_index_b is not None else 0
+        else: # horizontal side
+            top_grid_index = self.grid_index_a if self.grid_index_a is not None else 0
+            bottom_grid_index = self.grid_index_b if self.grid_index_b is not None else 0
+            
+        return [
+            self.index,             # side index
+            self.direction,         # direction (0 for vertical, 1 for horizontal)
+            left_grid_index,        # left grid index (1-based)
+            right_grid_index,       # right grid index (1-based)
+            bottom_grid_index,      # bottom grid index (1-based)
+            top_grid_index,         # top grid index (1-based)
+            self.length,            # length of the side
+            *self.center,           # center coordinates (x, y, z)
+            self.type,              # side type
         ]
 
 @cc.iicrm

@@ -18,9 +18,9 @@ from typing import Callable
 from functools import partial
 from contextlib import contextmanager
 
+from crms.patch import Patch
 from icrms.igrid import IGrid, PatchInfo
-from crms.patch import Patch, GridSchema
-from crms.solution import HydroElement
+from crms.solution import HydroElement, HydroSide
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -202,11 +202,12 @@ class Grid(IGrid):
         ]
 
         self.grid_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'grid_records.bin')
+        self.edge_record_path = Path('resource', 'topo', 'schemas', '1', 'grids', 'edge_records.bin')
 
         # Initialize cache
         self._edge_index_cache: list[bytes] = []
         self._edge_index_dict: dict[int, bytes] = {}
-        self._edge_adj_grids_indices: list[list[int]] = []
+        self._edge_adj_grids_indices: list[list[int | None]] = [] # for each edge, the list of adjacent grid indices, among [grid_a, grid_b], grid_a must be the north or west grid
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -491,9 +492,7 @@ class Grid(IGrid):
         
         return x_min_frac, x_max_frac, y_min_frac, y_max_frac
 
-    def _get_edge_index(self, grid_index_a: int | None, grid_index_b: int | None, direction: int, edge_range_info: list[list[int]]) -> bytes:
-        if grid_index_a is None and grid_index_b is None:
-            raise ValueError('Both grid_index_a and grid_index_b cannot be None')
+    def _get_edge_index(self, grid_index_a: int, grid_index_b: int | None, direction: int, edge_range_info: list[list[int]], code_from_a: EdgeCode) -> bytes:
         if direction not in (0, 1):
             raise ValueError('Direction must be either 0 (vertical) or 1 (horizontal)')
         if not isinstance(edge_range_info, list) or len(edge_range_info) != 3:
@@ -509,7 +508,7 @@ class Grid(IGrid):
             min_num, max_num = max_num, min_num
             min_den, max_den = max_den, min_den
         
-        # Construct the edge key (25 bytes total)
+        # Construct the edge key (25 bytes total, !BIIIIII)
         # Bit allocation:
         # aligned: 7 bit (highest)
         # direction: 1 bit
@@ -520,16 +519,13 @@ class Grid(IGrid):
         # shared_num: 32 bits
         # shared_den: 32 bits
         # Total bits = 1 + 7 + 32 * 6 = 200 bits (25 bytes)
-        
-        edge_key = bytearray()
-        edge_key += b'\x01' if direction else b'\x00'
-        edge_key += int.to_bytes(min_num, 4, 'big')
-        edge_key += int.to_bytes(min_den, 4, 'big')
-        edge_key += int.to_bytes(max_num, 4, 'big')
-        edge_key += int.to_bytes(max_den, 4, 'big')
-        edge_key += int.to_bytes(shared_num, 4, 'big')
-        edge_key += int.to_bytes(shared_den, 4, 'big')
-        edge_key = bytes(edge_key)
+        edge_key = struct.pack(
+            '!BIIIIII',
+            1 if direction else 0,
+            min_num, min_den,
+            max_num, max_den,
+            shared_num, shared_den
+        )
         
         # Try get edge_index
         if edge_key not in self._edge_index_dict:
@@ -537,7 +533,7 @@ class Grid(IGrid):
             self._edge_index_dict[edge_key] = edge_index
             self._edge_index_cache.append(edge_key)
 
-            grids = [grid_index_a, grid_index_b]
+            grids = [grid_index_b, grid_index_a] if code_from_a == EdgeCode.NORTH or code_from_a == EdgeCode.WEST else [grid_index_a, grid_index_b]
             self._edge_adj_grids_indices.append(grids)
             return edge_index
         else:
@@ -552,8 +548,7 @@ class Grid(IGrid):
     
     def _calc_horizontal_edges(
         self, grid_cache: GridCache,
-        grid_index: int,
-        level: int, global_id: int,
+        grid_index: int, level: int,
         neighbour_indices: list[int],
         edge_code: EdgeCode, op_edge_code: EdgeCode,
         shared_y_frac: list[int]
@@ -563,13 +558,13 @@ class Grid(IGrid):
         
         # Case when no neighbour ##################################################
         if not neighbour_indices:
-            edge_index = self._get_edge_index(grid_index, None, 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac])
+            edge_index = self._get_edge_index(grid_index, None, 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac], edge_code)
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             return
         
         # Case when neighbour has lower level ##################################################
         if len(neighbour_indices) == 1 and grid_cache.array[neighbour_indices[0]][0] < level:
-            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac])
+            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 1, [grid_x_min_frac, grid_x_max_frac, shared_y_frac], edge_code)
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             self._add_grid_edge(grid_cache, neighbour_indices[0], op_edge_code, edge_index)
             return
@@ -593,7 +588,7 @@ class Grid(IGrid):
         if grid_x_min != processed_neighbours[0]['x_min']:
             edge_index = self._get_edge_index(
                 grid_index, None, 1,
-                [grid_x_min_frac, processed_neighbours[0]['x_min_frac'], shared_y_frac]
+                [grid_x_min_frac, processed_neighbours[0]['x_min_frac'], shared_y_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
         
@@ -605,7 +600,7 @@ class Grid(IGrid):
             # Calculate edge of neighbour_from
             edge_index = self._get_edge_index(
                 grid_index, neighbour_from['index'], 1,
-                [neighbour_from['x_min_frac'], neighbour_from['x_max_frac'], shared_y_frac]
+                [neighbour_from['x_min_frac'], neighbour_from['x_max_frac'], shared_y_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             self._add_grid_edge(grid_cache, neighbour_from['index'], op_edge_code, edge_index)
@@ -614,7 +609,7 @@ class Grid(IGrid):
             if neighbour_from['x_max'] != neighbour_to['x_min']:
                 edge_index = self._get_edge_index(
                     grid_index, None, 1,
-                    [neighbour_from['x_max_frac'], neighbour_to['x_min_frac'], shared_y_frac]
+                    [neighbour_from['x_max_frac'], neighbour_to['x_min_frac'], shared_y_frac], edge_code
                 )
                 self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
                 
@@ -622,7 +617,7 @@ class Grid(IGrid):
         neighbour_last = processed_neighbours[-1]
         edge_index = self._get_edge_index(
             grid_index, neighbour_last['index'], 1,
-            [neighbour_last['x_min_frac'], neighbour_last['x_max_frac'], shared_y_frac]
+            [neighbour_last['x_min_frac'], neighbour_last['x_max_frac'], shared_y_frac], edge_code
         )
         self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
         self._add_grid_edge(grid_cache, neighbour_last['index'], op_edge_code, edge_index)
@@ -631,14 +626,13 @@ class Grid(IGrid):
         if grid_x_max != neighbour_last['x_max']:
             edge_index = self._get_edge_index(
                 grid_index, None, 1,
-                [neighbour_last['x_max_frac'], grid_x_max_frac, shared_y_frac]
+                [neighbour_last['x_max_frac'], grid_x_max_frac, shared_y_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
     
     def _calc_vertical_edges(
         self, grid_cache: GridCache,
-        grid_index: int,
-        level: int, global_id: int,
+        grid_index: int, level: int,
         neighbour_indices: list[int],
         edge_code: EdgeCode, op_edge_code: EdgeCode,
         shared_x_frac: list[int]
@@ -648,13 +642,13 @@ class Grid(IGrid):
         
         # Case when no neighbour ##################################################
         if not neighbour_indices:
-            edge_index = self._get_edge_index(grid_index, None, 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac])
+            edge_index = self._get_edge_index(grid_index, None, 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac], edge_code)
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             return
         
         # Case when neighbour has lower level ##################################################
         if len(neighbour_indices) == 1 and grid_cache.array[neighbour_indices[0]][0] < level:
-            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac])
+            edge_index = self._get_edge_index(grid_index, neighbour_indices[0], 0, [grid_y_min_frac, grid_y_max_frac, shared_x_frac], edge_code)
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             self._add_grid_edge(grid_cache, neighbour_indices[0], op_edge_code, edge_index)
             return
@@ -678,7 +672,7 @@ class Grid(IGrid):
         if grid_y_min != processed_neighbours[0]['y_min']:
             edge_index = self._get_edge_index(
                 grid_index, None, 0,
-                [grid_y_min_frac, processed_neighbours[0]['y_min_frac'], shared_x_frac]
+                [grid_y_min_frac, processed_neighbours[0]['y_min_frac'], shared_x_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
         
@@ -690,7 +684,7 @@ class Grid(IGrid):
             # Calculate edge of neighbour_from
             edge_index = self._get_edge_index(
                 grid_index, neighbour_from['index'], 0,
-                [neighbour_from['y_min_frac'], neighbour_from['y_max_frac'], shared_x_frac]
+                [neighbour_from['y_min_frac'], neighbour_from['y_max_frac'], shared_x_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             self._add_grid_edge(grid_cache, neighbour_from['index'], op_edge_code, edge_index)
@@ -699,7 +693,7 @@ class Grid(IGrid):
             if neighbour_from['y_max'] != neighbour_to['y_min']:
                 edge_index = self._get_edge_index(
                     grid_index, None, 0,
-                    [neighbour_from['y_max_frac'], neighbour_to['y_min_frac'], shared_x_frac]
+                    [neighbour_from['y_max_frac'], neighbour_to['y_min_frac'], shared_x_frac], edge_code
                 )
                 self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
                 
@@ -707,7 +701,7 @@ class Grid(IGrid):
         neighbour_last = processed_neighbours[-1]
         edge_index = self._get_edge_index(
             grid_index, neighbour_last['index'], 0,
-            [neighbour_last['y_min_frac'], neighbour_last['y_max_frac'], shared_x_frac]
+            [neighbour_last['y_min_frac'], neighbour_last['y_max_frac'], shared_x_frac], edge_code
         )
         self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
         self._add_grid_edge(grid_cache, neighbour_last['index'], op_edge_code, edge_index)
@@ -716,7 +710,7 @@ class Grid(IGrid):
         if grid_y_max != neighbour_last['y_max']:
             edge_index = self._get_edge_index(
                 grid_index, None, 0,
-                [neighbour_last['y_max_frac'], grid_y_max_frac, shared_x_frac]
+                [neighbour_last['y_max_frac'], grid_y_max_frac, shared_x_frac], edge_code
             )
             self._add_grid_edge(grid_cache, grid_index, edge_code, edge_index)
             
@@ -730,16 +724,16 @@ class Grid(IGrid):
             grid_x_min_frac, grid_x_max_frac, grid_y_min_frac, grid_y_max_frac = grid_cache.fract_coords[grid_index]
             
             north_neighbours = list(neighbours[EdgeCode.NORTH])
-            self._calc_horizontal_edges(grid_cache, grid_index, level, global_id, north_neighbours, EdgeCode.NORTH, EdgeCode.SOUTH, grid_y_max_frac)
+            self._calc_horizontal_edges(grid_cache, grid_index, level, north_neighbours, EdgeCode.NORTH, EdgeCode.SOUTH, grid_y_max_frac)
             
             west_neighbours = list(neighbours[EdgeCode.WEST])
-            self._calc_vertical_edges(grid_cache, grid_index, level, global_id, west_neighbours, EdgeCode.WEST, EdgeCode.EAST, grid_x_min_frac)
+            self._calc_vertical_edges(grid_cache, grid_index, level, west_neighbours, EdgeCode.WEST, EdgeCode.EAST, grid_x_min_frac)
             
             south_neighbours = list(neighbours[EdgeCode.SOUTH])
-            self._calc_horizontal_edges(grid_cache, grid_index, level, global_id, south_neighbours, EdgeCode.SOUTH, EdgeCode.NORTH, grid_y_min_frac)
+            self._calc_horizontal_edges(grid_cache, grid_index, level, south_neighbours, EdgeCode.SOUTH, EdgeCode.NORTH, grid_y_min_frac)
             
             east_neighbours = list(neighbours[EdgeCode.EAST])
-            self._calc_vertical_edges(grid_cache, grid_index, level, global_id, east_neighbours, EdgeCode.EAST, EdgeCode.WEST, grid_x_max_frac)
+            self._calc_vertical_edges(grid_cache, grid_index, level, east_neighbours, EdgeCode.EAST, EdgeCode.WEST, grid_x_max_frac)
 
     def _parse_topology(self, grid_cache: GridCache):
         # Step 1: Calculate all grid neighbours
@@ -754,7 +748,7 @@ class Grid(IGrid):
         
         print(f'Find grid edges: {len(self._edge_index_cache)} edges')
     
-    def _create_grid_record(self, grid_cache: GridCache):
+    def _create_grid_records(self, grid_cache: GridCache):
         batch_size = 10000
         batch_args = [
             (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size))
@@ -777,6 +771,35 @@ class Grid(IGrid):
         with open(self.grid_record_path, 'wb') as f:
             f.write(grid_records)
         print(f'Grid records created at {self.grid_record_path}')
+    
+    def _slice_edge_info(self, start_index: int, length: int) -> tuple[list[bytes], list[list[int | None]]]:
+        if start_index < 0 or start_index >= len(self._edge_index_cache):
+            raise IndexError('Start index out of range')
+        end_index = min(start_index + length, len(self._edge_index_cache))
+        edge_indices = self._edge_index_cache[start_index:end_index]
+        edge_adj_grids_indices = self._edge_adj_grids_indices[start_index:end_index]
+        return edge_indices, edge_adj_grids_indices
+    
+    def _create_edge_records(self):
+        batch_size = 10000
+        batch_args = [
+            self._slice_edge_info(i, batch_size)
+            for i in range(0, len(self._edge_index_cache), batch_size)
+        ]
+        batch_func = partial(
+            _batch_edge_records_worker,
+            bbox=self.bounds
+        )
+        num_processes = min(os.cpu_count(), len(batch_args))
+        with mp.Pool(processes=num_processes) as pool:
+            edge_records_list = pool.map(batch_func, batch_args)
+        edge_records = bytearray()
+        for edge_records_chunk in edge_records_list:
+            edge_records += edge_records_chunk
+        
+        with open(self.edge_record_path, 'wb') as f:
+            f.write(edge_records)
+        print(f'Edge records created at {self.edge_record_path}')
 
     def merge(self):
         # Iterate all patches to process the meta overview
@@ -793,7 +816,8 @@ class Grid(IGrid):
         self._parse_topology(grid_cache)
         
         # Create records
-        self._create_grid_record(grid_cache)
+        self._create_grid_records(grid_cache)
+        self._create_edge_records()
         
         # Test
         cursor = 0
@@ -830,6 +854,26 @@ class Grid(IGrid):
                     top_edges = edges[top_edge_start:]
                     
                     print(f'Element info: Index: {index}, Type: {type}, Center: {center}, Left Edges: {left_edges}, Right Edges: {right_edges}, Bottom Edges: {bottom_edges}, Top Edges: {top_edges}')
+        
+        print('\n##########')
+        print('##########')
+        print('##########\n')
+        
+        cursor = 0
+        with open(self.edge_record_path, 'r+b') as f:
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                for _ in range(10):
+                    print('-------------------------------')
+                    # Read the edge record bytes by cursor
+                    mm.seek(cursor)
+                    length_prefix = struct.unpack('!I', mm.read(4))[0]
+                    mm.seek(cursor + 4)
+                    data = mm.read(length_prefix)
+                    cursor += 4 + length_prefix
+                    
+                    side = HydroSide(data)
+                    ns = side.ns
+                    print(f'Edge info: Index: {ns[0]}, direction: {ns[1]}, Grids: {ns[2:6]}, Length: {ns[6]}, Center: {ns[7:10]}, Type: {ns[10]}')
 
 # Helpers ##################################################
 
@@ -1157,7 +1201,45 @@ def _batch_grid_records_worker(
 
     return records
 
-def _distance2D(x1: float, y1: float, x2: float, y2: float) -> float:
-    dx = x1 - x2
-    dy = y1 - y2
-    return math.sqrt(dx * dx + dy * dy)
+def _generate_edge_record(index: int, edge_data: bytes, edge_grids: list[int | None], bbox: list[float]) -> bytearray:
+    direction, min_num, min_den, max_num, max_den, shared_num, shared_den = struct.unpack('!BIIIIII', edge_data)
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    
+    if direction == 0:  # vertical edge
+        x_min = bbox[0] + (shared_num / shared_den) * (bbox[2] - bbox[0])
+        x_max = x_min
+        y_min = bbox[1] + (min_num / min_den) * (bbox[3] - bbox[1])
+        y_max = bbox[1] + (max_num / max_den) * (bbox[3] - bbox[1])
+    elif direction == 1:  # horizontal edge
+        x_min = bbox[0] + (min_num / min_den) * (bbox[2] - bbox[0])
+        x_max = bbox[0] + (max_num / max_den) * (bbox[2] - bbox[0])
+        y_min = bbox[1] + (shared_num / shared_den) * (bbox[3] - bbox[1])
+        y_max = y_min
+    
+    return struct.pack(
+        '!QBddddQQ',
+        index + 1,  # index (1-based)
+        direction,
+        x_min, y_min, x_max, y_max,
+        edge_grids[0] + 1 if edge_grids[0] is not None else 0, # grid_index_a (1-based)
+        edge_grids[1] + 1 if edge_grids[1] is not None else 0  # grid_index_b (1-based)
+    )
+
+def _batch_edge_records_worker(args: tuple[bytes, list[list[int | None]]], bbox: list[float]) -> bytes:
+    edge_data, edge_grids = args
+    
+    records = bytearray()
+    edge_count = len(edge_data) // 25 # each edge has 25 bytes
+    for i in range(edge_count):
+        edge = edge_data[i]
+        
+        record = _generate_edge_record(i, edge, edge_grids[i], bbox)
+        length_prefix = struct.pack('!I', len(record))
+        
+        records += length_prefix
+        records += record
+
+    return records
