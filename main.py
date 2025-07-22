@@ -17,7 +17,7 @@ if __name__ == "__main__":
     uvicorn.run("src.nh_grid_server.main:app", host="0.0.0.0", port=8000, reload=True)
     
     # import time
-    # from crms.grid import Grid
+    # from crms.grid import Grid, IGrid
     
     # grid = Grid()
     # grid.create_meta_overview()

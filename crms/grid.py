@@ -217,7 +217,7 @@ class Grid(IGrid):
     def _create_meta_overview(self, treeger: Treeger):
         # Update bounds
         for patch_info in self.patch_infos:
-            patch = treeger.instantiate_crm(patch_info.node_key, Patch)
+            patch = treeger.proxy(patch_info.node_key, Patch)
             schema = patch.get_schema()
             self.bounds[0] = min(self.bounds[0], schema.bounds[0])
             self.bounds[1] = min(self.bounds[1], schema.bounds[1])
@@ -262,7 +262,7 @@ class Grid(IGrid):
             f.write(b'\x00' * self.meta_ov_byte_length)
 
     def _process_patch(self, treeger: Treeger, patch_info: PatchInfo):
-        patch = treeger.instantiate_crm(patch_info.node_key, Patch)
+        patch = treeger.proxy(patch_info.node_key, Patch)
         patch_width = patch.level_info[1]['width']
         patch_height = patch.level_info[1]['height']
         
@@ -668,7 +668,6 @@ class Grid(IGrid):
         current_time = time.time()
         self._calc_grid_edges(grid_cache)
         print(f'Grid edge calculation took {time.time() - current_time:.2f} seconds')
-        
         print(f'Find grid edges: {len(self._edge_index_cache)} edges')
     
     def _create_grid_records(self, grid_cache: GridCache):
@@ -693,7 +692,6 @@ class Grid(IGrid):
         
         with open(self.grid_record_path, 'wb') as f:
             f.write(grid_records)
-        print(f'Grid records created at {self.grid_record_path}')
     
     def _slice_edge_info(self, start_index: int, length: int) -> tuple[list[bytes], list[list[int | None]]]:
         if start_index < 0 or start_index >= len(self._edge_index_cache):
@@ -722,9 +720,11 @@ class Grid(IGrid):
         
         with open(self.edge_record_path, 'wb') as f:
             f.write(edge_records)
-        print(f'Edge records created at {self.edge_record_path}')
 
     def merge(self):
+        if self.grid_record_path.exists() and self.edge_record_path.exists():
+            return
+        
         # Get treeger
         treeger = Treeger(SCENARIO_META_PATH)
         

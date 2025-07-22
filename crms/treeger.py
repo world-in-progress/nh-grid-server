@@ -535,9 +535,12 @@ class Treeger(ITreeger):
                 'nodes': running_nodes,
             }
     
-    def instantiate_crm(self, node_key: str, proxy_crm_class: Type[T]) -> T | None:
+    def proxy(self, node_key: str, proxy_crm_class: Type[T]) -> T | None:
         """Can only be used in the same thread by other CRM"""
         # TODO: make icrm proxy for remote CRM
+        # TODO: NOT ROBUST for icrm proxy
+        is_crm = proxy_crm_class.direction == '<-'
+        
         with self.lock:
             if not self._node_exists_in_db(node_key):
                 return None
@@ -545,5 +548,12 @@ class Treeger(ITreeger):
                 node = self._load_node_from_db(node_key)
                 if not node:
                     return None
-                
-                return proxy_crm_class(**node.launch_params)
+                if is_crm:
+                    return proxy_crm_class(**node.launch_params)
+                else:
+                    address = self.activate_node(node_key, ReuseAction.KEEP, CRMDuration.Forever)
+                    client = cc.rpc.Client(address)
+                    proxy = proxy_crm_class()
+                    proxy.client = client
+                    proxy.close = lambda: client.close()
+                    return proxy
