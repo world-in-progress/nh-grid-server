@@ -17,6 +17,9 @@ meta:
     - name: Grid
       icrm: IGrid
       crm_launcher: scripts/grid.crm.py
+    - name: Raster
+      icrm: IRaster
+      crm_launcher: scripts/raster.crm.py
   scenario:
     name: root
     children:
@@ -37,6 +40,7 @@ meta:
       - name: dems
         children:
           - name: dem
+            crm: Raster
       - name: lums
         children:
           - name: lum
