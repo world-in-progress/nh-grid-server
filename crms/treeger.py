@@ -9,6 +9,7 @@ import threading
 import subprocess
 import c_two as cc
 from pathlib import Path
+from dotenv import load_dotenv
 from typing import TypeVar, Type
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -16,9 +17,8 @@ from icrms.itreeger import ITreeger, CRMEntry, TreeMeta, ReuseAction, ScenarioNo
 
 T = TypeVar('T')
 
+load_dotenv()
 logger = logging.getLogger(__name__)
-
-ROOT_DIR = Path(os.getcwd()).resolve()
 
 @dataclass
 class ProcessInfo():
@@ -52,63 +52,63 @@ class SceneNode():
 
 @cc.iicrm
 class Treeger(ITreeger):
-    def __init__(self, meta_path: str):
-        self.lock = threading.RLock()
+    def __init__(self):
+        meta_path = os.getenv('SCENARIO_META_PATH', None)
+        if not meta_path:
+            raise ValueError('SCENARIO_META_PATH environment variable is not set, Treeger cannot be initialized')
         
-        self.meta_path = ROOT_DIR / meta_path
+        self.lock = threading.RLock()
+        self.meta_path = Path(meta_path)
         self.process_pool: dict[str, ProcessInfo] = {}
         self.scene_nodes_in_flight: dict[str, set[str]] = {}  # scenario node name -> set of scene node names
         
-        try:
-            with open(meta_path, 'r') as f:
-                tree_meta = yaml.safe_load(f)
-            self.meta = TreeMeta(**(tree_meta['meta']))
-            self.crm_entry_dict: dict[str, CRMEntry] = {
-                node.name: node for node in self.meta.crm_entries
-            }
+        with open(meta_path, 'r') as f:
+            tree_meta = yaml.safe_load(f)
+        self.meta = TreeMeta(**(tree_meta['meta']))
+        self.crm_entry_dict: dict[str, CRMEntry] = {
+            node.name: node for node in self.meta.crm_entries
+        }
 
-            # Iterate through the scenario
-            self.root = self.meta.scenario
-            self.root.parent = None
-            self.root.semantic_path = self.root.name
-            self.scenario_node_dict: dict[str, ScenarioNode] = {
-                self.root.name: self.root
-            }
-            scenario_node_stack = [self.root]
-            while scenario_node_stack:
-                # Get the current scenario node
-                scenario_node = scenario_node_stack.pop()
-                # Record the scenario node in the dictionary
-                self.scenario_node_dict[scenario_node.name] = scenario_node
-                # Initialize the CRM in-flight set if not exists
-                if scenario_node.name not in self.scene_nodes_in_flight:
-                    self.scene_nodes_in_flight[scenario_node.name] = set()
+        # Iterate through the scenario
+        self.root = self.meta.scenario
+        self.root.parent = None
+        self.root.semantic_path = self.root.name
+        self.scenario_node_dict: dict[str, ScenarioNode] = {
+            self.root.name: self.root
+        }
+        scenario_node_stack = [self.root]
+        while scenario_node_stack:
+            # Get the current scenario node
+            scenario_node = scenario_node_stack.pop()
+            # Record the scenario node in the dictionary
+            self.scenario_node_dict[scenario_node.name] = scenario_node
+            # Initialize the CRM in-flight set if not exists
+            if scenario_node.name not in self.scene_nodes_in_flight:
+                self.scene_nodes_in_flight[scenario_node.name] = set()
 
-                # Parse node type
-                if len(scenario_node.children) == 0:
-                    scenario_node.node_type = ScenarioNodeType.Resource
-                elif len(scenario_node.children) == 1:
-                    scenario_node.node_type = ScenarioNodeType.Conception
-                else:
-                    scenario_node.node_type = ScenarioNodeType.Aggregation
-                    
-                # Update semantic paths for all children
-                for child in scenario_node.children:
-                    child.parent = scenario_node
-                    child.semantic_path = f'{scenario_node.semantic_path}.{child.name}'
-                    scenario_node_stack.append(child)
-            
-            # Initialize scene db
-            self.scene_db_path = ROOT_DIR / self.meta.configuration.scene_path
-            self._init_db()
-            
-        except Exception as e:
-            logger.error(f'Failed to initialize treeger from {meta_path}: {e}')
+            # Parse node type
+            if len(scenario_node.children) == 0:
+                scenario_node.node_type = ScenarioNodeType.Resource
+            elif len(scenario_node.children) == 1:
+                scenario_node.node_type = ScenarioNodeType.Conception
+            else:
+                scenario_node.node_type = ScenarioNodeType.Aggregation
+                
+            # Update semantic paths for all children
+            for child in scenario_node.children:
+                child.parent = scenario_node
+                child.semantic_path = f'{scenario_node.semantic_path}.{child.name}'
+                scenario_node_stack.append(child)
+        
+        # Initialize scene db
+        self.scene_db_path = Path(self.meta.configuration.scene_path)
+        self._init_db()
             
     def _init_db(self):
         # Create database directory if it doesn't exist
         self.scene_db_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Create the database file if it doesn't exist
         with sqlite3.connect(self.scene_db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS scene_nodes (
@@ -120,7 +120,6 @@ class Treeger(ITreeger):
                     FOREIGN KEY (parent_key) REFERENCES scene_nodes (node_key) ON DELETE CASCADE
                 )
             """)
-            
             conn.execute("CREATE INDEX IF NOT EXISTS idx_parent_key ON scene_nodes(parent_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS ids_scenario_node_name ON scene_nodes(scenario_node_name)")
             conn.commit()
@@ -235,7 +234,7 @@ class Treeger(ITreeger):
         with self.lock:
             # Check if node already exists in db
             if (self._node_exists_in_db(node_key)):
-                logger.info(f'Node {node_key} already mounted, skipping')
+                logger.debug(f'Node {node_key} already mounted, skipping')
                 return
             
             scenario_node = self.scenario_node_dict.get(scenario_node_name, None)
@@ -535,7 +534,7 @@ class Treeger(ITreeger):
                 'nodes': running_nodes,
             }
     
-    def proxy(self, node_key: str, proxy_crm_class: Type[T]) -> T | None:
+    def trigger(self, node_key: str, proxy_crm_class: Type[T]) -> T | None:
         """Can only be used in the same thread by other CRM"""
         # TODO: make icrm proxy for remote CRM
         # TODO: NOT ROBUST for icrm proxy

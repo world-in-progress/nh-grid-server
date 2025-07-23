@@ -14,7 +14,6 @@ from pathlib import Path
 from enum import IntEnum
 from typing import Callable
 from functools import partial
-from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from crms.patch import Patch
@@ -22,7 +21,6 @@ from icrms.igrid import IGrid
 from crms.treeger import Treeger
 from crms.solution import HydroElement, HydroSide
 
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -217,7 +215,7 @@ class Grid(IGrid):
     def _create_meta_overview(self, treeger: Treeger):
         # Update bounds
         for patch_info in self.patch_infos:
-            patch = treeger.proxy(patch_info.node_key, Patch)
+            patch = treeger.trigger(patch_info.node_key, Patch)
             schema = patch.get_schema()
             self.bounds[0] = min(self.bounds[0], schema.bounds[0])
             self.bounds[1] = min(self.bounds[1], schema.bounds[1])
@@ -262,7 +260,7 @@ class Grid(IGrid):
             f.write(b'\x00' * self.meta_ov_byte_length)
 
     def _process_patch(self, treeger: Treeger, patch_info: PatchInfo):
-        patch = treeger.proxy(patch_info.node_key, Patch)
+        patch = treeger.trigger(patch_info.node_key, Patch)
         patch_width = patch.level_info[1]['width']
         patch_height = patch.level_info[1]['height']
         
@@ -726,7 +724,7 @@ class Grid(IGrid):
             return
         
         # Get treeger
-        treeger = Treeger(SCENARIO_META_PATH)
+        treeger = Treeger()
         
         # Create meta overview
         self._create_meta_overview(treeger)
