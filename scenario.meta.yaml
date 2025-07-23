@@ -63,6 +63,6 @@ meta:
                   - name: other_actions
                     children:
                       - name: other_action
-      - name: instances
+      - name: simulations
         children:
-          - name: instance
+          - name: simulation

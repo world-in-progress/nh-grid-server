@@ -35,7 +35,7 @@ def init_working_directory():
     solutions_path = resource_path / 'solutions'
     solutions_path.mkdir(parents=True, exist_ok=True)
     
-    instances_path = resource_path / 'instances'
+    instances_path = resource_path / 'simulations'
     instances_path.mkdir(parents=True, exist_ok=True)
     
 def get_server_status():
