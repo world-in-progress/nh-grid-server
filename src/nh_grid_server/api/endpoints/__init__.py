@@ -7,6 +7,7 @@ from . import topo
 from . import proxy
 from . import grids
 from . import solution
+from . import raster
 
 router = APIRouter(prefix='/api', tags=['api'])
 
@@ -18,3 +19,4 @@ router.include_router(scene.router)
 router.include_router(grids.router)
 router.include_router(proxy.router)
 router.include_router(solution.router)
+router.include_router(raster.router)
