@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     # Solution related constants
     SOLUTION_DIR: str = 'resource/solutions/'
+
+    DEM_DIR: str = 'resource/dems/'
     SERVER_PORT: int = 8000
 
     class Config:
