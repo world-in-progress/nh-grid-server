@@ -1,33 +1,32 @@
 from typing import Any
 from pydantic import BaseModel
 
-class UploadBody(BaseModel):
-    file_path: str
-    file_type: str
-
-class FeatureProperty(BaseModel):
-    id: str
+class CreateFeatureBody(BaseModel):
     name: str
     type: str
-    icon: str
-    symbology: str
-
-class UpdateFeaturePropertyBody(BaseModel):
-    name: str
-    icon: str
-    symbology: str
+    color: str
+    epsg: str
 
 class FeatureSaveBody(BaseModel):
-    feature_property: FeatureProperty
+    name: str
     feature_json: dict[str, Any]
 
-class UploadedFeatureSaveBody(BaseModel):
-    file_path: str
+class GetFeatureJsonResponse(BaseModel):
+    success: bool
+    message: str
+    feature_json: dict[str, Any] | None = None
+
+class UpdateFeatureBody(BaseModel):
+    name: str
+    type: str
+    color: str
+    epsg: str
     feature_json: dict[str, Any]
-    is_edited: bool
+
+class UploadFeatureSaveBody(BaseModel):
+    name: str
+    file_path: str
+    file_type: str
     
 class GetFeatureJsonInfo(BaseModel):
-    feature_name: str
-    
-class FeatureMeta(BaseModel):
-    feature_meta: list[FeatureProperty]
+    name: str

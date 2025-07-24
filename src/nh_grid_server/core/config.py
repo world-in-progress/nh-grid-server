@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     SOLUTION_DIR: str = 'resource/solutions/'
 
     DEM_DIR: str = 'resource/dems/'
+    LUM_DIR: str = 'resource/lums/'
+
+    FEATURE_DIR: str = 'resource/vectors/'
+
     SERVER_PORT: int = 8000
 
     class Config:

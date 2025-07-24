@@ -28,18 +28,22 @@ logger = logging.getLogger(__name__)
 
 @cc.iicrm
 class Raster(IRaster):
-    def __init__(self, name: str, original_tif_path: str):
+    def __init__(self, name: str, type: str, original_tif_path: str):
         """
         初始化栅格对象
         :param original_tif_path: 原始TIF文件路径
         """
         self.name = name
+        self.type = type
         self.original_tif_path = original_tif_path
 
-        self.path = Path(f'{settings.DEM_DIR}{self.name}')
+        if self.type == 'dem':
+            self.path = Path(f'{settings.DEM_DIR}{self.name}')
+        elif self.type == 'lum':
+            self.path = Path(f'{settings.LUM_DIR}{self.name}')
         self.path.mkdir(parents=True, exist_ok=True)
         
-        # COG 文件路径（延迟创建）
+        # COG 文件路径
         self.cog_tif_path = None
         
         # 缓存栅格信息
