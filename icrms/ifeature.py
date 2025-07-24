@@ -16,7 +16,7 @@ class IFeature:
     def save_uploaded_feature(self, file_path: str, file_type: str) -> dict[str, bool | str]:
         ...
 
-    def get_feature_json_visualization(self) -> dict[str, Any]:
+    def get_feature(self) -> dict[str, Any]:
         ...
 
     def get_feature_json_computation(self) -> dict[str, Any]:

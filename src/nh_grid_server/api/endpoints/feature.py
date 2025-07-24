@@ -4,7 +4,7 @@ from icrms.ifeature import IFeature
 from fastapi import APIRouter, Body
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT
-from ...schemas.feature import GetFeatureJsonResponse, UploadFeatureSaveBody, FeatureSaveBody, UpdateFeatureBody, CreateFeatureBody
+from ...schemas.feature import GetFeatureJsonResponse, GetFeatureResponse, UploadFeatureSaveBody, FeatureSaveBody, UpdateFeatureBody, CreateFeatureBody
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,7 @@ def save_feature(body: FeatureSaveBody=Body(..., description='save feature')):
     Save a feature.
     """
     try:
-        node_key = f'root.vectors.{body.name}'
-        with BT.instance.connect(node_key, IFeature) as feature:
+        with BT.instance.connect(body.node_key, IFeature) as feature:
             save_info = feature.save_feature(body.feature_json)
         return BaseResponse(
             success=save_info.get('success', False),
@@ -59,8 +58,7 @@ def save_uploaded_feature(body: UploadFeatureSaveBody=Body(..., description='sav
     Save an uploaded feature.
     """
     try:
-        node_key = f'root.vectors.{body.name}'
-        with BT.instance.connect(node_key, IFeature) as feature:
+        with BT.instance.connect(body.node_key, IFeature) as feature:
             save_info = feature.save_uploaded_feature(body.file_path, body.file_type)
         return BaseResponse(
             success=save_info.get('success', False),
@@ -72,21 +70,21 @@ def save_uploaded_feature(body: UploadFeatureSaveBody=Body(..., description='sav
             message=f'Failed to save uploaded feature: {str(e)}'
         )
 
-@router.get('feature_json_visualization/{node_key}', response_model=GetFeatureJsonResponse)
-def get_feature_json_visualization(node_key: str):
+@router.get('feature/{node_key}', response_model=GetFeatureResponse)
+def get_feature(node_key: str):
     try:
         with BT.instance.connect(node_key, IFeature) as feature:
-            feature_json = feature.get_feature_json_visualization()
-        return GetFeatureJsonResponse(
+            data = feature.get_feature()
+        return GetFeatureResponse(
             success=True,
             message='Feature JSON retrieved successfully',
-            feature_json=feature_json
+            data=data
         )
     except Exception as e:
-        return GetFeatureJsonResponse(
+        return GetFeatureResponse(
             success=False,
             message=f'Failed to retrieve feature JSON: {str(e)}',
-            feature_json=None
+            data=None
         )
 
 @router.get('feature_json_computation/{node_key}', response_model=GetFeatureJsonResponse)

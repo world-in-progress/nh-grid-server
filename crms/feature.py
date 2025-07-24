@@ -88,14 +88,21 @@ class Feature(IFeature):
                 'message': str(e)
             }
 
-    def get_feature_json_visualization(self) -> dict[str, Any]:
+    def get_feature(self) -> dict[str, Any]:
         """
         Get feature json
         """
         file_path = os.path.join(self.path, self.name + '.geojson')
         with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-        
+            feature_json = json.load(f)
+        return {
+            'name': self.name,
+            'type': self.type,
+            'color': self.color,
+            'epsg': self.epsg,
+            'feature_json': feature_json
+        }
+
     def get_feature_json_computation(self) -> dict[str, Any]:
         """
         Get feature json for computation

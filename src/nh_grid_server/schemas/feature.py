@@ -8,8 +8,13 @@ class CreateFeatureBody(BaseModel):
     epsg: str
 
 class FeatureSaveBody(BaseModel):
-    name: str
+    node_key: str
     feature_json: dict[str, Any]
+
+class GetFeatureResponse(BaseModel):
+    success: bool
+    message: str
+    data: dict[str, Any] | None = None
 
 class GetFeatureJsonResponse(BaseModel):
     success: bool
@@ -24,7 +29,7 @@ class UpdateFeatureBody(BaseModel):
     feature_json: dict[str, Any]
 
 class UploadFeatureSaveBody(BaseModel):
-    name: str
+    node_key: str
     file_path: str
     file_type: str
     

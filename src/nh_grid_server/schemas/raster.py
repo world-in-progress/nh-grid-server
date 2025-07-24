@@ -18,10 +18,13 @@ class GetCogTifResponse(BaseModel):
     message: str
     data: dict[str, Any] = None
 
-class UpdateByFeatureBody(BaseModel):
-    feature: dict[str, Any]
+class UpdateByFeatureItem(BaseModel):
+    feature_node_key: str
     operation: RasterOperation
     value: float = 0.0
+
+class UpdateByFeatureBody(BaseModel):
+    updates: list[UpdateByFeatureItem]
 
 class SamplingResponse(BaseModel):
     success: bool
