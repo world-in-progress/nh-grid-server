@@ -44,6 +44,7 @@ meta:
       - name: lums
         children:
           - name: lum
+            crm: Raster
       - name: vectors
         children:
           - name: vector

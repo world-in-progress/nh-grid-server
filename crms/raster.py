@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import shutil
 import c_two as cc
 from pathlib import Path
 from typing import Dict, Any
@@ -12,7 +13,7 @@ from PIL import Image
 from osgeo import gdal
 import rasterio.windows
 import geopandas as gpd
-from shapely.geometry import shape
+from shapely.geometry import shape, box
 from rio_tiler.io import COGReader
 from rio_tiler.models import ImageData
 from rio_tiler.utils import render
@@ -114,7 +115,6 @@ class Raster(IRaster):
             except Exception as gdal_e:
                 logger.error(f'GDAL fallback also failed: {gdal_e}')
                 # Final fallback: copy original file
-                import shutil
                 shutil.copy2(source_tif_path, output_tif_path)
                 logger.warning(f'Used original file as fallback at {output_tif_path} from {source_tif_path}')
                 return str(output_tif_path)
@@ -308,6 +308,181 @@ class Raster(IRaster):
                         
         except Exception as e:
             logger.error(f'Failed to update raster by feature: {e}')
+            return cog_path
+
+    def update_by_features_batch(self, feature_operations: list) -> str:
+        """
+        批量根据 GeoJSON feature 更新栅格数据
+        优化版本：合并所有features的边界框，只进行一次相交操作
+        :param feature_operations: 包含feature、operation和value的操作列表，每个元素格式为:
+                                   {'feature': feature_dict, 'operation': RasterOperation, 'value': float}
+        :return: 更新后的栅格数据路径
+        """
+        cog_path = self.get_cog_tif()
+        if not cog_path:
+            logger.error('No COG TIF available for batch update')
+            return ''
+        
+        if not feature_operations:
+            logger.warning('No feature operations provided for batch update')
+            return cog_path
+        
+        try:
+            # 直接修改现有的 COG TIF 文件
+            with rasterio.open(cog_path, 'r+', IGNORE_COG_LAYOUT_BREAK='YES') as src:
+                logger.info(f'Starting optimized batch update with {len(feature_operations)} operations on {cog_path}')
+                
+                # 第一步：解析所有features并计算合并的边界框
+                all_geometries = []
+                all_bounds = []
+                
+                for i, feature_op in enumerate(feature_operations):
+                    feature = feature_op['feature']
+                    geom = shape(feature['geometry'])
+                    all_geometries.append(geom)
+                    all_bounds.append(geom.bounds)
+                    logger.debug(f'Parsed geometry {i+1}: bounds={geom.bounds}')
+                
+                # 计算所有features的合并边界框
+                if all_bounds:
+                    min_x = min(bounds[0] for bounds in all_bounds)
+                    min_y = min(bounds[1] for bounds in all_bounds)
+                    max_x = max(bounds[2] for bounds in all_bounds)
+                    max_y = max(bounds[3] for bounds in all_bounds)
+                    merged_bounds = (min_x, min_y, max_x, max_y)
+                    logger.info(f'Merged bounds for all features: {merged_bounds}')
+                else:
+                    logger.warning('No valid geometries found')
+                    return cog_path
+                
+                # 第二步：基于合并边界框计算栅格窗口
+                left, bottom, right, top = merged_bounds
+                
+                # 转换为像素坐标
+                ul_row, ul_col = rasterio.transform.rowcol(src.transform, left, top)
+                lr_row, lr_col = rasterio.transform.rowcol(src.transform, right, bottom)
+                
+                # 确保坐标在栅格范围内
+                ul_row = max(0, min(ul_row, src.height - 1))
+                ul_col = max(0, min(ul_col, src.width - 1))
+                lr_row = max(0, min(lr_row, src.height - 1))
+                lr_col = max(0, min(lr_col, src.width - 1))
+                
+                # 确保边界框有效
+                if ul_row >= lr_row or ul_col >= lr_col:
+                    logger.warning('Invalid merged bounding box, no updates performed')
+                    return cog_path
+                
+                # 计算合并窗口
+                merged_window = rasterio.windows.Window(
+                    col_off=ul_col, 
+                    row_off=ul_row, 
+                    width=lr_col - ul_col + 1, 
+                    height=lr_row - ul_row + 1
+                )
+                
+                logger.info(f'Merged window: {merged_window}')
+                
+                # 第三步：读取合并窗口的数据（只读取一次）
+                window_data = src.read(1, window=merged_window)
+                if window_data.size == 0:
+                    logger.warning('No data in merged window')
+                    return cog_path
+                
+                # 创建窗口的变换矩阵
+                window_transform = rasterio.windows.transform(merged_window, src.transform)
+                
+                # 第四步：为每个feature创建掩膜并按顺序应用操作
+                updated_data = window_data.copy()
+                
+                for i, (feature_op, geom) in enumerate(zip(feature_operations, all_geometries)):
+                    operation = feature_op['operation']
+                    value = feature_op.get('value', 0.0)
+                    
+                    logger.info(f'Applying operation {i+1}/{len(feature_operations)}: {operation.value} with value {value}')
+                    
+                    # 检查几何是否与当前窗口相交
+                    window_geom_bounds = rasterio.windows.bounds(merged_window, src.transform)
+                    window_box = box(*window_geom_bounds)
+                    
+                    if not geom.intersects(window_box):
+                        logger.debug(f'Operation {i+1}: Geometry does not intersect with window, skipping')
+                        continue
+                    
+                    # 创建当前feature的掩膜
+                    try:
+                        inside_mask = rasterize(
+                            [geom], 
+                            out_shape=window_data.shape,
+                            transform=window_transform,
+                            fill=0,  # 外部像素填充为0
+                            default_value=1,  # 内部像素填充为1
+                            dtype=np.uint8
+                        ).astype(bool)
+                    except Exception as mask_e:
+                        logger.warning(f'Operation {i+1}: Failed to create mask: {mask_e}, skipping')
+                        continue
+                    
+                    # 应用操作到当前数据状态
+                    if operation == RasterOperation.SET:
+                        mask_valid = inside_mask
+                        if src.nodata is not None:
+                            mask_valid = mask_valid & (updated_data != src.nodata)
+                        updated_data = np.where(mask_valid, value, updated_data)
+                        
+                    elif operation == RasterOperation.ADD:
+                        mask_valid = inside_mask
+                        if src.nodata is not None:
+                            mask_valid = mask_valid & (updated_data != src.nodata)
+                        updated_data = np.where(mask_valid, updated_data + value, updated_data)
+                        
+                    elif operation == RasterOperation.SUBTRACT:
+                        mask_valid = inside_mask
+                        if src.nodata is not None:
+                            mask_valid = mask_valid & (updated_data != src.nodata)
+                        updated_data = np.where(mask_valid, updated_data - value, updated_data)
+                        
+                    elif operation == RasterOperation.MAX_FILL:
+                        mask_valid = inside_mask
+                        if src.nodata is not None:
+                            mask_valid = mask_valid & (updated_data != src.nodata)
+                        
+                        if np.any(mask_valid):
+                            # 使用当前数据状态计算最大值
+                            max_value = np.max(updated_data[mask_valid])
+                            updated_data = np.where(mask_valid, max_value, updated_data)
+                            logger.info(f'Operation {i+1}: Set all pixels in feature to max value: {max_value}')
+                        else:
+                            logger.warning(f'Operation {i+1}: No valid pixels found in feature area for max_fill operation')
+                            
+                    else:
+                        logger.error(f'Operation {i+1}: Unsupported operation: {operation}')
+                        continue
+                    
+                    logger.debug(f'Operation {i+1}: Applied {operation.value} operation successfully')
+                
+                # 第五步：一次性写入所有更新（只写入一次）
+                src.write(updated_data, 1, window=merged_window)
+                logger.info(f'Completed optimized batch update: applied {len(feature_operations)} operations to merged window {merged_window}')
+                        
+            # 在所有操作完成后，重新生成云优化的 GeoTIFF
+            new_cog_path = self._create_cloud_optimized_tif(cog_path)
+            self.cog_tif_path = new_cog_path
+
+            os.remove(cog_path)  # 删除原始 COG 文件
+            logger.info(f'Removed original COG TIF at {cog_path}')
+
+            # 清理全局范围缓存，因为数据已经更新
+            if hasattr(self, '_global_min_max_cache'):
+                delattr(self, '_global_min_max_cache')
+                logger.info('Cleared global min/max cache after optimized batch raster update')
+
+            logger.info(f'Regenerated Cloud Optimized GeoTIFF at {new_cog_path} after optimized batch update')
+            
+            return new_cog_path
+                        
+        except Exception as e:
+            logger.error(f'Failed to perform optimized batch update raster by features: {e}')
             return cog_path
 
     def sampling(self, x: float, y: float) -> float:

@@ -29,6 +29,14 @@ class IRaster:
         """
         ...
 
+    def update_by_features_batch(self, feature_operations: list) -> str:
+        """
+        批量根据 GeoJSON feature 更新栅格数据
+        :param feature_operations: 包含feature、operation和value的操作列表
+        :return: 更新后的栅格数据路径
+        """
+        ...
+
     def get_tile_png(self, x: int, y: int, z: int) -> bytes:
         """
         获取指定瓦片的PNG图像数据
