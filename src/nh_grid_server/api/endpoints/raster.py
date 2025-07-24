@@ -3,7 +3,6 @@ from fastapi import APIRouter, HTTPException, Body, Response
 from fastapi.responses import StreamingResponse
 import logging
 import io
-from typing import Optional
 from ...core.bootstrapping_treeger import BT
 from ...schemas.base import BaseResponse
 from ...schemas.raster import CreateRasterBody, UpdateByFeatureBody, GetCogTifResponse, SamplingResponse, GetMetadataResponse
@@ -21,24 +20,27 @@ def create_raster(body: CreateRasterBody=Body(..., description='create raster'))
     Create a raster.
     """
     try:
-        node_key = f'root.dems.{body.name}'
-        BT.instance.mount_node("dem", node_key, body.model_dump())
+        if body.type == 'dem':
+            node_key = f'root.dems.{body.name}'
+            BT.instance.mount_node("dem", node_key, body.model_dump())
+        elif body.type == 'lum':
+            node_key = f'root.lums.{body.name}'
+            BT.instance.mount_node("lum", node_key, body.model_dump())
         return BaseResponse(
             success=True,
             message=node_key
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Failed to set patch as the current resource: {str(e)}')
+        raise HTTPException(status_code=500, detail=f'Failed to create raster: {str(e)}')
 
-@router.get('/cog_tif/{raster_name}', response_model=GetCogTifResponse)
-def get_cog_tif(raster_name: str):
+@router.get('/cog_tif/{node_key}', response_model=GetCogTifResponse)
+def get_cog_tif(node_key: str):
     """
     Description
     --
     Get the COG TIFF.
     """
     try:
-        node_key = f'root.dems.{raster_name}'
         with BT.instance.connect(node_key, IRaster) as raster:
             cog_tif = raster.get_cog_tif()
             if not cog_tif:
@@ -51,8 +53,8 @@ def get_cog_tif(raster_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to retrieve COG TIFF: {str(e)}')
 
-@router.post('/update_by_feature/{raster_name}', response_model=BaseResponse)
-def update_raster_by_feature(raster_name: str, body: UpdateByFeatureBody = Body(..., description='Update raster by feature')):
+@router.post('/update_by_feature/{node_key}', response_model=BaseResponse)
+def update_raster_by_feature(node_key: str, body: UpdateByFeatureBody = Body(..., description='Update raster by feature')):
     """
     Description
     --
@@ -65,7 +67,6 @@ def update_raster_by_feature(raster_name: str, body: UpdateByFeatureBody = Body(
     - value: Value to use in the operation, default is 0.0
     """
     try:
-        node_key = f'root.dems.{raster_name}'
         with BT.instance.connect(node_key, IRaster) as raster:
             updated_path = raster.update_by_feature(body.feature, body.operation, body.value)
             if not updated_path:
@@ -78,8 +79,8 @@ def update_raster_by_feature(raster_name: str, body: UpdateByFeatureBody = Body(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to update raster by feature: {str(e)}')
 
-@router.get('/sampling/{raster_name}/{x}/{y}', response_model=SamplingResponse)
-def get_raster_sampling(raster_name: str, x: float, y: float):
+@router.get('/sampling/{node_key}/{x}/{y}', response_model=SamplingResponse)
+def get_raster_sampling(node_key: str, x: float, y: float):
     """
     Description
     --
@@ -93,7 +94,6 @@ def get_raster_sampling(raster_name: str, x: float, y: float):
               If None, assumes coordinates are in the same CRS as the raster
     """
     try:
-        node_key = f'root.dems.{raster_name}'
         with BT.instance.connect(node_key, IRaster) as raster:
             value = raster.sampling(x, y)
             return SamplingResponse(
@@ -104,8 +104,8 @@ def get_raster_sampling(raster_name: str, x: float, y: float):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get raster sampling: {str(e)}')
 
-@router.get('/tile/{raster_name}/{z}/{x}/{y}.png')
-def get_raster_tile_png(raster_name: str, x: int, y: int, z: int):
+@router.get('/tile/{node_key}/{z}/{x}/{y}.png')
+def get_raster_tile_png(node_key: str, x: int, y: int, z: int):
     """
     Description
     --
@@ -118,23 +118,22 @@ def get_raster_tile_png(raster_name: str, x: int, y: int, z: int):
     - z: Zoom level
     """
     try:
-        node_key = f'root.dems.{raster_name}'
         with BT.instance.connect(node_key, IRaster) as raster:
             png_data = raster.get_tile_png(x, y, z)
             if not png_data:
                 raise HTTPException(status_code=404, detail='Tile not found')
             
-            # return StreamingResponse(
-            #     io.BytesIO(png_data),
-            #     media_type="image/png",
-            #     headers={"Cache-Control": "public, max-age=3600"}
-            # )
-            return Response(content=png_data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+            return StreamingResponse(
+                io.BytesIO(png_data),
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"}
+            )
+            # return Response(content=png_data, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get raster tile: {str(e)}')
 
-@router.get('/metadata/{raster_name}', response_model=GetMetadataResponse)
-def get_raster_metadata(raster_name: str):
+@router.get('/metadata/{node_key}', response_model=GetMetadataResponse)
+def get_raster_metadata(node_key: str):
     """
     Description
     --
@@ -144,7 +143,6 @@ def get_raster_metadata(raster_name: str):
     - raster_name: Name of the raster
     """
     try:
-        node_key = f'root.dems.{raster_name}'
         with BT.instance.connect(node_key, IRaster) as raster:
             metadata = raster.get_metadata()
             if not metadata:
