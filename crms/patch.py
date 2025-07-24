@@ -586,7 +586,7 @@ class Patch(IPatch):
         children_indices_to_deactivate = []
         for parent_level, parent_global_id in activated_parents:
             child_level_of_activated_parent = parent_level + 1
-            theoretical_child_global_ids = self._get_grid_children_global_ids(parent_level, parent_global_id)
+            theoretical_child_global_ids = self.get_children_global_ids(parent_level, parent_global_id)
             if theoretical_child_global_ids:
                 for child_global_id in theoretical_child_global_ids:
                     encoded_idx = _encode_index(child_level_of_activated_parent, child_global_id)
