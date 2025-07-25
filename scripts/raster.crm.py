@@ -30,7 +30,7 @@ if __name__ == '__main__':
     server.start()
     logger.info(f'Starting CRM server at {server_address}')
     try:
-        if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else 10000):
+        if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else args.timeout):
             logger.info('Timeout reached, terminating CRM...')
             server.stop()
     except KeyboardInterrupt:

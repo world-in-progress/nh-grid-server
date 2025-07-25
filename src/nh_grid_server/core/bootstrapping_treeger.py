@@ -106,12 +106,12 @@ class BootStrappingTreeger:
             raise AttributeError(f'{name} not found in ITreeger')
         
     @contextmanager
-    def connect(self, node_key: str, icrm: Type[T], duration: CRMDuration = CRMDuration.Medium) -> Generator[T, None, None]:
+    def connect(self, node_key: str, icrm: Type[T], duration: CRMDuration = CRMDuration.Medium, reuse: ReuseAction = ReuseAction.KEEP) -> Generator[T, None, None]:
         proxy_crm = None
         try:
             with cc.compo.runtime.connect_crm(self._server_address, ITreeger) as crm:
-                server_address = crm.activate_node(node_key, ReuseAction.KEEP, duration)
-                
+                server_address = crm.activate_node(node_key, reuse, duration)
+
             client = cc.rpc.Client(server_address)
             proxy_crm = icrm()
             proxy_crm.client = client

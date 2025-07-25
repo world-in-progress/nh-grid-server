@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException, Body, Response
 from fastapi.responses import StreamingResponse
 import logging
 import io
+
+from icrms.itreeger import ReuseAction, CRMDuration
 from ...core.bootstrapping_treeger import BT
 from ...schemas.base import BaseResponse
 from ...schemas.raster import CreateRasterBody, UpdateByFeatureBody, GetCogTifResponse, SamplingResponse, GetMetadataResponse
@@ -42,7 +44,7 @@ def get_cog_tif(node_key: str):
     Get the COG TIFF.
     """
     try:
-        with BT.instance.connect(node_key, IRaster) as raster:
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
             cog_tif = raster.get_cog_tif()
             if not cog_tif:
                 raise HTTPException(status_code=404, detail='COG TIFF not found')
@@ -80,7 +82,7 @@ def update_raster_by_feature(node_key: str, body: UpdateByFeatureBody = Body(...
         for update_item in body.updates:
             # 从feature_node_key获取feature数据
             try:
-                with BT.instance.connect(update_item.feature_node_key, IFeature) as feature_node:
+                with BT.instance.connect(update_item.feature_node_key, IFeature, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as feature_node:
                     feature_data = feature_node.get_feature()  # 获取feature的GeoJSON数据
                     
                     feature_operations.append({
@@ -122,7 +124,7 @@ def get_raster_sampling(node_key: str, x: float, y: float):
               If None, assumes coordinates are in the same CRS as the raster
     """
     try:
-        with BT.instance.connect(node_key, IRaster) as raster:
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
             value = raster.sampling(x, y)
             return SamplingResponse(
                 success=True,
@@ -146,7 +148,7 @@ def get_raster_tile_png(node_key: str, x: int, y: int, z: int):
     - z: Zoom level
     """
     try:
-        with BT.instance.connect(node_key, IRaster) as raster:
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
             png_data = raster.get_tile_png(x, y, z)
             if not png_data:
                 raise HTTPException(status_code=404, detail='Tile not found')
@@ -171,7 +173,7 @@ def get_raster_metadata(node_key: str):
     - raster_name: Name of the raster
     """
     try:
-        with BT.instance.connect(node_key, IRaster) as raster:
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
             metadata = raster.get_metadata()
             if not metadata:
                 raise HTTPException(status_code=404, detail='Metadata not found')
