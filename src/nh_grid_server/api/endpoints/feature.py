@@ -70,7 +70,7 @@ def save_uploaded_feature(body: UploadFeatureSaveBody=Body(..., description='sav
             message=f'Failed to save uploaded feature: {str(e)}'
         )
 
-@router.get('feature/{node_key}', response_model=GetFeatureResponse)
+@router.get('/{node_key}', response_model=GetFeatureResponse)
 def get_feature(node_key: str):
     try:
         with BT.instance.connect(node_key, IFeature) as feature:
@@ -87,7 +87,7 @@ def get_feature(node_key: str):
             data=None
         )
 
-@router.get('feature_json_computation/{node_key}', response_model=GetFeatureJsonResponse)
+@router.get('/feature_json_computation/{node_key}', response_model=GetFeatureJsonResponse)
 def get_feature_json_computation(node_key: str):
     try:
         with BT.instance.connect(node_key, IFeature) as feature:
