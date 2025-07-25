@@ -8,7 +8,6 @@ import c_two as cc
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from crms.feature import Feature
-from crms.treeger import CRMDuration
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,7 +38,7 @@ if __name__ == '__main__':
     server.start()
     logger.info('CRM server started at %s', server_address)
     try:
-        if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else 10000):
+        if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else args.timeout):
             logger.info('Timeout reached, terminating CRM...')
             server.stop()
     except KeyboardInterrupt:

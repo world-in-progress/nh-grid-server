@@ -2,6 +2,7 @@ import os
 import json
 import zipfile
 import logging
+import shutil
 import c_two as cc
 from typing import Any
 from pathlib import Path
@@ -114,8 +115,9 @@ class Feature(IFeature):
         
         # If target EPSG is the same as storage EPSG (4326), return as is
         if self.epsg == DEFAULT_EPSG:
+            logger.info('No transformation needed, returning GeoJSON as is')
             return geojson_data
-        
+        logger.info(f'Transforming GeoJSON coordinates from EPSG:4326 to EPSG:{self.epsg}')
         # Transform coordinates from 4326 to target EPSG
         return self._transform_geojson_coordinates(geojson_data, DEFAULT_EPSG, self.epsg)
 
@@ -148,56 +150,32 @@ class Feature(IFeature):
         """
         Delete feature
         """
-        file_path = os.path.join(self.path, self.name + '.geojson')
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return {
-                'success': True,
-                'message': 'Feature deleted successfully',
-            }
+        if os.path.exists(self.path):
+            try:
+                # Use shutil.rmtree to remove directory and all its contents
+                shutil.rmtree(self.path)
+                return {
+                    'success': True,
+                    'message': 'Feature deleted successfully',
+                }
+            except PermissionError as e:
+                logger.error(f'Permission denied when deleting feature: {str(e)}')
+                return {
+                    'success': False,
+                    'message': f'Permission denied: {str(e)}',
+                }
+            except Exception as e:
+                logger.error(f'Failed to delete feature: {str(e)}')
+                return {
+                    'success': False,
+                    'message': f'Failed to delete feature: {str(e)}',
+                }
         else:
             return {
                 'success': False,   
                 'message': 'Feature not found',
             }
-
-    def save_uploaded_feature(self, file_path: str, feature_json: dict[str, Any], is_edited: bool) -> dict[str, bool | str]:
-        """
-        Save feature to resource pool
-        """
-        try:
-            # 如果文件被编辑，复制到资源池
-            if is_edited:
-                # 获取文件名
-                file_name = os.path.basename(file_path)
-                # 复制文件到资源池
-                target_path = os.path.join(self.feature_path, file_name + '.json')
-                # 创建目录
-                os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                # 将json写入
-                with open(target_path, 'w') as f:
-                    json.dump(feature_json, f, ensure_ascii=False, indent=2)
-                resource_path = target_path
-            else:
-                # 如果文件未被编辑，直接使用原路径
-                resource_path = file_path
-            
-            # 调用资源树挂载接口
-            # TODO: 实现资源树挂载逻辑
-            
-            return {
-                'success': True,
-                'message': "Feature saved successfully",
-                'resource_path': resource_path
-            }
-        except Exception as e:
-            logger.error(f'Failed to save feature: {str(e)}')
-            return {
-                'success': False,
-                'message': str(e),
-                'resource_path': ""
-            }
-      
+ 
     def _shp_to_geojson(self, shp_path):
         # 如果输入是zip文件，先解压
         if shp_path.endswith('.zip'):
@@ -288,9 +266,13 @@ class Feature(IFeature):
             # Create spatial reference systems
             source_srs = osr.SpatialReference()
             source_srs.ImportFromEPSG(int(source_epsg))
+            # Set axis mapping to traditional GIS order (longitude, latitude)
+            source_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
             
             target_srs = osr.SpatialReference()
             target_srs.ImportFromEPSG(int(target_epsg))
+            # Set axis mapping to traditional GIS order (longitude, latitude)
+            target_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
             
             # Transform coordinates for each feature in the FeatureCollection
             features = geojson_data.get('features', [])
@@ -387,6 +369,8 @@ class Feature(IFeature):
                 try:
                     temp_srs = osr.SpatialReference()
                     temp_srs.ImportFromWkt(crs_wkt)
+                    # Set axis mapping to traditional GIS order (longitude, latitude)
+                    temp_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
                     epsg_code = temp_srs.GetAuthorityCode(None)
                     if epsg_code:
                         epsg_code = str(epsg_code)
@@ -460,6 +444,8 @@ class Feature(IFeature):
                 try:
                     srs = osr.SpatialReference()
                     srs.ImportFromWkt(crs_wkt)
+                    # Set axis mapping to traditional GIS order (longitude, latitude)
+                    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
                     epsg_code = srs.GetAuthorityCode(None)
                     if epsg_code:
                         epsg_code = str(epsg_code)
