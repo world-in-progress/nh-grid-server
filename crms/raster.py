@@ -168,154 +168,30 @@ class Raster(IRaster):
             logger.error(f'Failed to read raster info: {e}')
             return {}
     
-    def update_by_feature(self, feature: Dict[str, Any], operation: RasterOperation, value: float = 0.0) -> str:
+    def update_by_feature(self, feature_collection: Dict[str, Any], operation: RasterOperation, value: float = 0.0) -> str:
         """
-        根据 GeoJSON feature 更新栅格数据
-        :param feature: GeoJSON feature 要素
+        根据 FeatureCollection 更新栅格数据
+        :param feature_collection: FeatureCollection 要素集合
         :param operation: 操作类型 (RasterOperation 枚举)
         :param value: 操作值 (对于 MAX_FILL 操作此参数将被忽略)
         :return: 更新后的栅格数据路径
         """
-        cog_path = self.get_cog_tif()
-        if not cog_path:
-            logger.error('No COG TIF available for update')
-            return ''
+        # 将单个FeatureCollection转换为feature_operations格式，复用update_by_features方法
+        feature_operations = [{
+            'feature': feature_collection,
+            'operation': operation,
+            'value': value
+        }]
         
-        try:
-            # 解析 feature 几何
-            geom = shape(feature['geometry'])
-            
-            # 创建 GeoDataFrame
-            gdf = gpd.GeoDataFrame([1], geometry=[geom])
-            
-            # 直接修改现有的 COG TIF 文件
-            # 添加 IGNORE_COG_LAYOUT_BREAK 选项来允许修改 COG 文件
-            with rasterio.open(cog_path, 'r+', IGNORE_COG_LAYOUT_BREAK='YES') as src:
-                # 检查 CRS 是否匹配
-                if gdf.crs is None:
-                    gdf = gdf.set_crs(src.crs)
-                elif gdf.crs != src.crs:
-                    gdf = gdf.to_crs(src.crs)
-                
-                # 获取几何形状的边界框
-                bounds = geom.bounds
-                
-                # 计算在栅格中的像素范围
-                left, bottom, right, top = bounds
-                
-                # 转换为像素坐标
-                ul_row, ul_col = rasterio.transform.rowcol(src.transform, left, top)
-                lr_row, lr_col = rasterio.transform.rowcol(src.transform, right, bottom)
-                
-                # 确保坐标在栅格范围内
-                ul_row = max(0, min(ul_row, src.height - 1))
-                ul_col = max(0, min(ul_col, src.width - 1))
-                lr_row = max(0, min(lr_row, src.height - 1))
-                lr_col = max(0, min(lr_col, src.width - 1))
-                
-                # 确保边界框有效
-                if ul_row >= lr_row or ul_col >= lr_col:
-                    logger.warning('Invalid bounding box for feature')
-                    return cog_path
-                
-                # 读取边界框区域的数据
-                window = rasterio.windows.Window(
-                    col_off=ul_col, 
-                    row_off=ul_row, 
-                    width=lr_col - ul_col + 1, 
-                    height=lr_row - ul_row + 1
-                )
-                
-                # 读取窗口数据
-                window_data = src.read(1, window=window)
-                if window_data.size == 0:
-                    logger.warning('No data in window')
-                    return cog_path
-                
-                # 创建窗口的变换矩阵
-                window_transform = rasterio.windows.transform(window, src.transform)
-                
-                # 使用 rasterize 创建几何掩膜
-                inside_mask = rasterize(
-                    [geom], 
-                    out_shape=window_data.shape,
-                    transform=window_transform,
-                    fill=0,  # 外部像素填充为0
-                    default_value=1,  # 内部像素填充为1
-                    dtype=np.uint8
-                ).astype(bool)
-                
-                # 创建更新后的数据副本
-                updated_data = window_data.copy()
-                
-                # 只对几何形状内部的像素进行操作
-                if operation == RasterOperation.SET:
-                    # 直接赋值，但只对几何形状内部且非nodata的像素
-                    mask_valid = inside_mask  # 几何形状内部
-                    if src.nodata is not None:
-                        mask_valid = mask_valid & (window_data != src.nodata)  # 排除原始nodata
-                    updated_data = np.where(mask_valid, value, window_data)
-                elif operation == RasterOperation.ADD:
-                    # 加值操作，只对几何形状内部且非nodata的像素
-                    mask_valid = inside_mask  # 几何形状内部
-                    if src.nodata is not None:
-                        mask_valid = mask_valid & (window_data != src.nodata)  # 排除原始nodata
-                    updated_data = np.where(mask_valid, window_data + value, window_data)
-                elif operation == RasterOperation.SUBTRACT:
-                    # 减值操作，只对几何形状内部且非nodata的像素
-                    mask_valid = inside_mask  # 几何形状内部
-                    if src.nodata is not None:
-                        mask_valid = mask_valid & (window_data != src.nodata)  # 排除原始nodata
-                    updated_data = np.where(mask_valid, window_data - value, window_data)
-                elif operation == RasterOperation.MAX_FILL:
-                    # 将feature范围内所有像素设置为该范围内的最高值
-                    mask_valid = inside_mask  # 几何形状内部
-                    if src.nodata is not None:
-                        mask_valid = mask_valid & (window_data != src.nodata)  # 排除原始nodata
-                    
-                    if np.any(mask_valid):
-                        # 获取几何形状内部有效像素的最大值
-                        max_value = np.max(window_data[mask_valid])
-                        updated_data = np.where(mask_valid, max_value, window_data)
-                        logger.info(f'Set all pixels in feature to max value: {max_value}')
-                    else:
-                        logger.warning('No valid pixels found in feature area for max_fill operation')
-                        updated_data = window_data
-                else:
-                    logger.error(f'Unsupported operation: {operation}')
-                    return cog_path
-                
-                # 直接写入更新的数据到原始COG文件
-                src.write(updated_data, 1, window=window)
-                
-                logger.info(f'Updated original COG TIF at {cog_path}')
-                        
-            # 直接使用修改后的 COG 文件重新生成云优化的 GeoTIFF
-            new_cog_path = self._create_cloud_optimized_tif(cog_path)
-            self.cog_tif_path = new_cog_path
+        return self.update_by_features(feature_operations)
 
-            os.remove(cog_path)  # 删除原始 COG 文件
-            logger.info(f'Removed original COG TIF at {cog_path}')
-
-            # 清理全局范围缓存，因为数据已经更新
-            if hasattr(self, '_global_min_max_cache'):
-                delattr(self, '_global_min_max_cache')
-                logger.info('Cleared global min/max cache after raster update')
-
-            logger.info(f'Regenerated Cloud Optimized GeoTIFF at {new_cog_path}')
-            
-            return new_cog_path
-                        
-        except Exception as e:
-            logger.error(f'Failed to update raster by feature: {e}')
-            return cog_path
-
-    def update_by_features_batch(self, feature_operations: list) -> str:
+    def update_by_features(self, feature_operations: list) -> str:
         """
-        批量根据 GeoJSON feature 更新栅格数据
+        批量根据 FeatureCollection 更新栅格数据
         优化版本：合并所有features的边界框，只进行一次相交操作
         :param feature_operations: 包含feature、operation和value的操作列表，每个元素格式为:
-                                   {'feature': feature_dict, 'operation': RasterOperation, 'value': float}
+                                   {'feature': feature_collection, 'operation': RasterOperation, 'value': float}
+                                   其中feature必须是FeatureCollection
         :return: 更新后的栅格数据路径
         """
         cog_path = self.get_cog_tif()
@@ -330,18 +206,37 @@ class Raster(IRaster):
         try:
             # 直接修改现有的 COG TIF 文件
             with rasterio.open(cog_path, 'r+', IGNORE_COG_LAYOUT_BREAK='YES') as src:
-                logger.info(f'Starting optimized batch update with {len(feature_operations)} operations on {cog_path}')
+                logger.info(f'Starting optimized batch update with {len(feature_operations)} FeatureCollection operations on {cog_path}')
                 
-                # 第一步：解析所有features并计算合并的边界框
+                # 第一步：解析所有FeatureCollection中的features并计算合并的边界框
                 all_geometries = []
                 all_bounds = []
+                operation_info = []  # 存储每个几何体对应的操作信息
                 
                 for i, feature_op in enumerate(feature_operations):
-                    feature = feature_op['feature']
-                    geom = shape(feature['geometry'])
-                    all_geometries.append(geom)
-                    all_bounds.append(geom.bounds)
-                    logger.debug(f'Parsed geometry {i+1}: bounds={geom.bounds}')
+                    feature_collection = feature_op['feature']
+                    operation = feature_op['operation']
+                    value = feature_op.get('value', 0.0)
+                    
+                    # 验证是否为FeatureCollection
+                    if feature_collection.get('type') != 'FeatureCollection':
+                        logger.warning(f'Operation {i+1}: Expected FeatureCollection, got {feature_collection.get("type", "unknown")}, skipping')
+                        continue
+                    
+                    # 处理FeatureCollection中的每个feature
+                    features = feature_collection.get('features', [])
+                    logger.debug(f'Processing FeatureCollection {i+1} with {len(features)} features')
+                    
+                    for j, feature in enumerate(features):
+                        try:
+                            geom = shape(feature['geometry'])
+                            all_geometries.append(geom)
+                            all_bounds.append(geom.bounds)
+                            operation_info.append({'operation': operation, 'value': value})
+                            logger.debug(f'FeatureCollection {i+1}, Feature {j+1}: bounds={geom.bounds}')
+                        except Exception as geom_e:
+                            logger.warning(f'Failed to parse geometry in FeatureCollection {i+1}, Feature {j+1}: {geom_e}')
+                            continue
                 
                 # 计算所有features的合并边界框
                 if all_bounds:
@@ -350,7 +245,7 @@ class Raster(IRaster):
                     max_x = max(bounds[2] for bounds in all_bounds)
                     max_y = max(bounds[3] for bounds in all_bounds)
                     merged_bounds = (min_x, min_y, max_x, max_y)
-                    logger.info(f'Merged bounds for all features: {merged_bounds}')
+                    logger.info(f'Merged bounds for all features: {merged_bounds}, total geometries: {len(all_geometries)}')
                 else:
                     logger.warning('No valid geometries found')
                     return cog_path
@@ -395,11 +290,11 @@ class Raster(IRaster):
                 # 第四步：为每个feature创建掩膜并按顺序应用操作
                 updated_data = window_data.copy()
                 
-                for i, (feature_op, geom) in enumerate(zip(feature_operations, all_geometries)):
-                    operation = feature_op['operation']
-                    value = feature_op.get('value', 0.0)
+                for i, (geom, op_info) in enumerate(zip(all_geometries, operation_info)):
+                    operation = op_info['operation']
+                    value = op_info['value']
                     
-                    logger.info(f'Applying operation {i+1}/{len(feature_operations)}: {operation.value} with value {value}')
+                    logger.info(f'Applying operation {i+1}/{len(all_geometries)}: {operation.value} with value {value}')
                     
                     # 检查几何是否与当前窗口相交
                     window_geom_bounds = rasterio.windows.bounds(merged_window, src.transform)
@@ -463,7 +358,7 @@ class Raster(IRaster):
                 
                 # 第五步：一次性写入所有更新（只写入一次）
                 src.write(updated_data, 1, window=merged_window)
-                logger.info(f'Completed optimized batch update: applied {len(feature_operations)} operations to merged window {merged_window}')
+                logger.info(f'Completed optimized batch update: applied {len(all_geometries)} geometry operations to merged window {merged_window}')
                         
             # 在所有操作完成后，重新生成云优化的 GeoTIFF
             new_cog_path = self._create_cloud_optimized_tif(cog_path)
@@ -815,6 +710,25 @@ class Raster(IRaster):
         except Exception as e:
             logger.error(f'Failed to get raster statistics: {e}')
             return {}
+
+    def delete_raster(self) -> Dict[str, Any]:
+        if os.path.exists(self.path):
+            try:
+                shutil.rmtree(self.path)
+                return {
+                    'success': True,
+                    'message': 'Feature deleted successfully',
+                }
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f'Failed to delete raster directory: {e}',
+                }
+        else:
+            return {
+                'success': False,
+                'message': 'Raster directory does not exist',
+            }
 
     def terminate(self) -> None:
         """

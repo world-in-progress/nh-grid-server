@@ -1,5 +1,5 @@
 import c_two as cc
-from typing import Dict, Any, Union, Optional, Tuple
+from typing import Dict, Any
 from enum import Enum
 
 class RasterOperation(Enum):
@@ -29,7 +29,7 @@ class IRaster:
         """
         ...
 
-    def update_by_features_batch(self, feature_operations: list) -> str:
+    def update_by_features(self, feature_operations: list) -> str:
         """
         批量根据 GeoJSON feature 更新栅格数据
         :param feature_operations: 包含feature、operation和value的操作列表
@@ -60,5 +60,12 @@ class IRaster:
         """
         获取栅格的元数据信息
         :return: 包含bbox、epsg、最小值、最大值和无效值的字典
+        """
+        ...
+
+    def delete_raster(self) -> Dict[str, Any]:
+        """
+        删除栅格数据
+        :return: 删除结果信息
         """
         ...

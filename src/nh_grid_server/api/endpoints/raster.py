@@ -1,15 +1,15 @@
-from fastapi import APIRouter
-from fastapi import APIRouter, HTTPException, Body, Response
-from fastapi.responses import StreamingResponse
-import logging
 import io
+import logging
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Body
 
-from icrms.itreeger import ReuseAction, CRMDuration
-from ...core.bootstrapping_treeger import BT
-from ...schemas.base import BaseResponse
-from ...schemas.raster import CreateRasterBody, UpdateByFeatureBody, GetCogTifResponse, SamplingResponse, GetMetadataResponse
-from icrms.iraster import IRaster, RasterOperation
+from icrms.iraster import IRaster
 from icrms.ifeature import IFeature
+from ...schemas.base import BaseResponse
+from ...core.bootstrapping_treeger import BT
+from icrms.itreeger import ReuseAction, CRMDuration
+from ...schemas.raster import CreateRasterBody, UpdateByFeatureBody, GetCogTifResponse, SamplingResponse, GetMetadataResponse
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +56,8 @@ def get_cog_tif(node_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to retrieve COG TIFF: {str(e)}')
 
-@router.post('/update_by_feature/{node_key}', response_model=BaseResponse)
-def update_raster_by_feature(node_key: str, body: UpdateByFeatureBody = Body(..., description='Update raster by features')):
+@router.post('/update_by_features/{node_key}', response_model=BaseResponse)
+def update_by_features(node_key: str, body: UpdateByFeatureBody = Body(..., description='Update raster by features')):
     """
     Description
     --
@@ -83,10 +83,10 @@ def update_raster_by_feature(node_key: str, body: UpdateByFeatureBody = Body(...
             # 从feature_node_key获取feature数据
             try:
                 with BT.instance.connect(update_item.feature_node_key, IFeature, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as feature_node:
-                    feature_data = feature_node.get_feature()  # 获取feature的GeoJSON数据
+                    feature_json = feature_node.get_feature_json_computation()  # 获取feature的GeoJSON数据
                     
                     feature_operations.append({
-                        'feature': feature_data,
+                        'feature': feature_json,
                         'operation': update_item.operation,
                         'value': update_item.value
                     })
@@ -95,8 +95,8 @@ def update_raster_by_feature(node_key: str, body: UpdateByFeatureBody = Body(...
                 raise HTTPException(status_code=404, detail=f'Feature not found: {update_item.feature_node_key}')
         
         # 执行批量更新
-        with BT.instance.connect(node_key, IRaster) as raster:
-            updated_path = raster.update_by_features_batch(feature_operations)
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
+            updated_path = raster.update_by_features(feature_operations)
             if not updated_path:
                 raise HTTPException(status_code=500, detail='Failed to update raster')
             
@@ -185,3 +185,24 @@ def get_raster_metadata(node_key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get raster metadata: {str(e)}')
     
+@router.delete('/{node_key}', response_model=BaseResponse)
+def delete_raster(node_key: str):
+    """
+    Description
+    --
+    Delete a raster.
+    """
+    try:
+        with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
+            delete_info = raster.delete_raster()
+        if delete_info.get('success', False):
+            BT.instance.unmount_node(node_key)
+        return BaseResponse(
+            success=delete_info.get('success', False),
+            message=delete_info.get('message', '')
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f'Failed to delete feature: {str(e)}'
+        )
