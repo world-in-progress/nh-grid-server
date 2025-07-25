@@ -17,6 +17,7 @@ from shapely.geometry import shape, box
 from rio_tiler.io import COGReader
 from rio_tiler.models import ImageData
 from rio_tiler.utils import render
+from rio_tiler.profiles import img_profiles
 from rasterio.features import rasterize
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
@@ -426,7 +427,7 @@ class Raster(IRaster):
 
     def get_tile_png(self, x: int, y: int, z: int) -> bytes:
         """
-        获取指定瓦片的PNG图像数据，使用COGReader优化
+        获取指定瓦片的Terrain RGB格式PNG图像数据，使用COGReader优化
         
         使用rio-tiler的COGReader.tile()方法提供最高效的瓦片生成：
         1. 直接处理瓦片坐标，无需手动边界框转换
@@ -435,10 +436,12 @@ class Raster(IRaster):
         4. 内置坐标系转换和重采样
         5. 优化的内存管理
         
+        生成的PNG使用Mapbox Terrain RGB编码格式，可用于地形渲染和高程计算。
+        
         :param x: 瓦片X坐标
         :param y: 瓦片Y坐标  
         :param z: 缩放级别
-        :return: 256x256像素的PNG图像字节数据
+        :return: Terrain RGB格式的256x256像素PNG图像字节数据
         """
         cog_path = self.get_cog_tif()
         if not cog_path:
@@ -462,12 +465,63 @@ class Raster(IRaster):
             logger.debug(f'Tile {x}/{y}/{z} not available, returning transparent tile: {e}')
             return self._create_transparent_tile(256)
 
+    def _encode_terrain_rgb(self, dem: np.ndarray, mask: np.ndarray = None, scale_factor: float = 1.0) -> np.ndarray:
+        """
+        将DEM数据编码为Terrain RGB格式
+        参考Mapbox Terrain RGB格式: https://docs.mapbox.com/data/tilesets/reference/mapbox-terrain-rgb-v1/
+        
+        Args:
+            dem: DEM数据
+            mask: 掩膜数据 (255表示有效数据，0表示无效数据)
+            scale_factor: 高程缩放因子，1.0表示不缩放，0.1表示缩小10倍
+        
+        Returns:
+            RGB编码的地形数据 (H, W, 3)
+        """
+        # 先保存原始的有效数据位置
+        if mask is not None:
+            valid_mask = mask == 255
+            # 将掩膜外的数据设为 NaN，保持掩膜内的原始高程不变
+            height = dem.copy().astype(np.float32)
+            height[~valid_mask] = np.nan
+        else:
+            height = dem.astype(np.float32)
+        
+        # 只对真正的 NaN 和无穷值进行处理（不包括我们刚才设置的掩膜外NaN）
+        original_nan_mask = np.isnan(dem) | np.isinf(dem)
+        height = np.nan_to_num(height, nan=0, posinf=0, neginf=0)
+
+        # 应用缩放因子
+        height = height * scale_factor
+
+        # 避免溢出：先限制 height 范围
+        height = np.clip(height, -10000, 8848)  # 限制在合理的地球高程范围内
+
+        # Mapbox Terrain RGB 编码公式
+        # height_encoded = (height + 10000) * 10
+        base = (height + 10000) * 10
+        R = np.floor(base / (256 * 256))
+        G = np.floor((base - R * 256 * 256) / 256)
+        B = np.floor(base - R * 256 * 256 - G * 256)
+
+        logger.debug(f"Height min: {np.min(height[mask == 255] if mask is not None else height)}, "
+                    f"max: {np.max(height[mask == 255] if mask is not None else height)}, "
+                    f"scale_factor: {scale_factor}")
+
+        rgb = np.stack([R, G, B], axis=-1)
+        rgb = np.nan_to_num(rgb, nan=0, posinf=0, neginf=0)
+
+        # Clamp 到 uint8 合法范围后再转换
+        rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+
+        return rgb
+
     def _create_png_from_cog_data(self, image_data: ImageData) -> bytes:
         """
-        从COGReader返回的ImageData创建PNG瓦片
+        从COGReader返回的ImageData创建Terrain RGB格式的PNG瓦片
         
         :param image_data: COGReader返回的ImageData对象
-        :return: PNG图像字节数据
+        :return: Terrain RGB格式的PNG图像字节数据
         """
         try:
             # 获取数据数组，通常是 (bands, height, width) 格式
@@ -491,66 +545,32 @@ class Raster(IRaster):
             
             height, width = data.shape
             
-            # 处理mask，如果没有mask则认为所有数据都有效
+            # 处理mask，如果没有mask则创建全255的mask
             if mask is not None:
-                valid_mask = mask.astype(bool)
+                # 确保mask是uint8格式
+                final_mask = mask.astype(np.uint8)
             else:
-                valid_mask = np.ones_like(data, dtype=bool)
+                final_mask = np.full((height, width), 255, dtype=np.uint8)
             
-            # 获取有效数据进行标准化
-            valid_data = data[valid_mask]
-            
-            if valid_data.size == 0:
+            # 检查是否有有效数据
+            if np.sum(final_mask == 255) == 0:
                 # 无有效数据，返回透明瓦片
+                logger.debug('No valid data in tile, returning transparent tile')
                 return self._create_transparent_tile(256)
             
-            # 使用全局的最小值和最大值进行标准化，而不是瓦片局部的值
-            # 这样可以确保所有瓦片使用相同的色彩映射，避免边界问题
-            global_min, global_max = self._get_global_min_max()
+            # 使用Terrain RGB编码
+            # 对于DEM数据，scale_factor通常设为1.0，保持原始高程精度
+            rgb = self._encode_terrain_rgb(data, final_mask, scale_factor=1.0)
             
-            if global_max > global_min:
-                # 使用全局范围进行标准化
-                normalized = np.clip((data - global_min) / (global_max - global_min) * 255, 0, 255)
-            else:
-                # 所有值相同，使用中等灰度
-                normalized = np.full_like(data, 128, dtype=np.float32)
+            # 使用rio-tiler的render函数生成PNG
+            # rgb shape: (H, W, 3) -> render需要 (3, H, W)
+            content = render(rgb.transpose(2, 0, 1), img_format="png", **img_profiles.get("png"))
             
-            # 创建RGBA数组
-            rgba_array = np.zeros((height, width, 4), dtype=np.uint8)
-            
-            # 设置灰度值
-            gray_values = np.clip(normalized, 0, 255).astype(np.uint8)
-            
-            # 设置RGB通道（灰度渲染）
-            rgba_array[:, :, 0] = gray_values  # Red
-            rgba_array[:, :, 1] = gray_values  # Green
-            rgba_array[:, :, 2] = gray_values  # Blue
-            
-            # 设置透明度通道
-            alpha_values = np.where(valid_mask, 255, 0).astype(np.uint8)
-            rgba_array[:, :, 3] = alpha_values
-            
-            # 生成Web优化的PNG
-            image = Image.fromarray(rgba_array, 'RGBA')
-            
-            # PNG压缩优化
-            png_buffer = io.BytesIO()
-            image.save(
-                png_buffer, 
-                format='PNG',
-                optimize=True,
-                compress_level=6,  # 平衡压缩率和速度
-                pnginfo=None  # 不包含元数据以减小文件大小
-            )
-            
-            png_data = png_buffer.getvalue()
-            png_buffer.close()
-            
-            logger.debug(f'Generated COGReader PNG: size={len(png_data)} bytes')
-            return png_data
+            logger.debug(f'Generated Terrain RGB PNG: size={len(content)} bytes')
+            return content
             
         except Exception as e:
-            logger.error(f'Failed to create PNG from COGReader data: {e}')
+            logger.error(f'Failed to create Terrain RGB PNG from COGReader data: {e}')
             return self._create_transparent_tile(256)
 
     def _get_global_min_max(self):
