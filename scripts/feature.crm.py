@@ -39,7 +39,7 @@ if __name__ == '__main__':
     logger.info('CRM server started at %s', server_address)
     try:
         if server.wait_for_termination(None if (args.timeout == -1 or args.timeout == 0) else args.timeout):
-            logger.info('Timeout reached, terminating CRM...')
+            logger.info('Feature timeout reached, terminating CRM...')
             server.stop()
     except KeyboardInterrupt:
         logger.info('KeyboardInterrupt received, terminating CRM...')
