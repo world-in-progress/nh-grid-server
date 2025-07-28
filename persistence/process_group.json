@@ -1,0 +1,118 @@
+[
+  {
+    "group_type": "flood_pipe",
+    "description": "洪水-管道联合模拟",
+    "skip_parameters": [
+      "shared",
+      "resource_path",
+      "step",
+      "flag"
+    ],
+    "shared": [
+      {
+        "name": "1d_data",
+        "type": "dict"
+      },
+      {
+        "name": "2d_data",
+        "type": "dict"
+      },
+      {
+        "name": "1d_ready",
+        "type": "Event"
+      },
+      {
+        "name": "2d_ready",
+        "type": "Event"
+      },
+      {
+        "name": "lock",
+        "type": "Lock"
+      }
+    ],
+    "processes": [
+      {
+        "name": "flood",
+        "script": "coupled_0710.Flood_new",
+        "entrypoint": "run_flood",
+        "parameters": [
+          {
+            "name": "shared",
+            "type": "dict"
+          },
+          {
+            "name": "ne",
+            "type": "str"
+          },
+          {
+            "name": "ns",
+            "type": "str"
+          },
+          {
+            "name": "inp",
+            "type": "str"
+          },
+          {
+            "name": "rainfall",
+            "type": "str"
+          },
+          {
+            "name": "gate",
+            "type": "str"
+          },
+          {
+            "name": "tide",
+            "type": "str"
+          },
+          {
+            "name": "resource_path",
+            "type": "str"
+          },
+          {
+            "name": "step",
+            "type": "int"
+          },
+          {
+            "name": "flag",
+            "type": "int"
+          }
+        ]
+      },
+      {
+        "name": "pipe",
+        "script": "coupled_0710.pipe_NH",
+        "entrypoint": "run_pipe_simulation",
+        "parameters": [
+          {
+            "name": "shared",
+            "type": "dict"
+          },
+          {
+            "name": "inp",
+            "type": "str"
+          },
+          {
+            "name": "resource_path",
+            "type": "str"
+          },
+          {
+            "name": "step",
+            "type": "int"
+          }
+        ]
+      }
+    ],
+    "monitor_config": {
+      "file_types": [
+        "result",
+        "flood_nodes",
+        "hsf"
+      ],
+      "file_suffix": {
+        "result": ".dat",
+        "flood_nodes": ".txt",
+        "hsf": ".hsf"
+      }
+    }
+  }
+]
