@@ -5,23 +5,21 @@ import shutil
 import c_two as cc
 from pathlib import Path
 from typing import Dict, Any
-from datetime import datetime
 
 import rasterio
 import numpy as np
 from PIL import Image
 from osgeo import gdal
 import rasterio.windows
-import geopandas as gpd
-from shapely.geometry import shape, box
 from rio_tiler.io import COGReader
-from rio_tiler.models import ImageData
 from rio_tiler.utils import render
-from rio_tiler.profiles import img_profiles
-from rasterio.features import rasterize
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
 from rasterio.warp import transform
+from rio_tiler.models import ImageData
+from rasterio.features import rasterize
+from shapely.geometry import shape, box
+from rio_cogeo.cogeo import cog_translate
+from rio_tiler.profiles import img_profiles
+from rio_cogeo.profiles import cog_profiles
 
 from icrms.iraster import IRaster, RasterOperation
 from src.nh_grid_server.core.config import settings
@@ -45,26 +43,155 @@ class Raster(IRaster):
             self.path = Path(f'{settings.LUM_DIR}{self.name}')
         self.path.mkdir(parents=True, exist_ok=True)
         
-        # COG 文件路径
-        self.cog_tif_path = None
+        # 资源文件夹中的原始TIF文件路径（固定名称）
+        self.resource_original_tif_path = self.path / f'{self.name}.original.tif'
+        # COG 文件路径（固定名称）  
+        self.cog_tif_path = self.path / f'{self.name}.cog.tif'
+        
+        # 初始化时拷贝原始TIF到资源文件夹（如果不存在）
+        self._initialize_original_tif()
         
         # 缓存栅格信息
         self._raster_info = None
 
+    def _initialize_original_tif(self):
+        """
+        初始化时拷贝原始TIF到资源文件夹，并重新计算统计信息
+        """
+        if not self.resource_original_tif_path.exists():
+            if Path(self.original_tif_path).exists():
+                # 先拷贝原始TIF文件
+                shutil.copy2(self.original_tif_path, self.resource_original_tif_path)
+                logger.info(f'Copied original TIF from {self.original_tif_path} to {self.resource_original_tif_path}')
+                
+                # 重新计算统计信息并写入文件
+                self._recalculate_statistics(str(self.resource_original_tif_path))
+                
+            else:
+                logger.error(f'Original TIF file not found: {self.original_tif_path}')
+        else:
+            logger.info(f'Original TIF already exists in resource folder: {self.resource_original_tif_path}')
+            
+            # 检查是否需要重新计算统计信息
+            self._ensure_statistics_exist(str(self.resource_original_tif_path))
+
+    def _recalculate_statistics(self, tif_path: str):
+        """
+        使用GDAL重新计算栅格的详细统计信息并写入文件
+        """
+        try:
+            # 使用GDAL打开文件并计算统计信息
+            dataset = gdal.Open(tif_path, gdal.GA_Update)
+            if dataset is None:
+                logger.error(f'Failed to open file for statistics calculation: {tif_path}')
+                return
+            
+            band_count = dataset.RasterCount
+            logger.info(f'Calculating statistics for {band_count} band(s) in {tif_path}')
+            
+            for band_num in range(1, band_count + 1):
+                band = dataset.GetRasterBand(band_num)
+                
+                # 计算精确的统计信息 (approx_ok=False 表示精确计算)
+                # force=True 表示强制重新计算，即使已存在统计信息
+                stats = band.ComputeStatistics(False, gdal.TermProgress_nocb)
+                
+                if stats:
+                    min_val, max_val, mean_val, std_val = stats
+                    logger.info(f'Band {band_num} statistics: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}, std={std_val:.6f}')
+                    
+                    # 设置统计信息到波段
+                    band.SetStatistics(min_val, max_val, mean_val, std_val)
+                else:
+                    logger.warning(f'Failed to compute statistics for band {band_num}')
+            
+            # 刷新并关闭数据集，确保统计信息被写入
+            dataset.FlushCache()
+            dataset = None
+            
+            logger.info(f'Successfully recalculated and saved statistics for {tif_path}')
+            
+        except Exception as e:
+            logger.error(f'Failed to recalculate statistics for {tif_path}: {e}')
+
+    def _ensure_statistics_exist(self, tif_path: str):
+        """
+        确保TIF文件包含统计信息，如果不存在则重新计算
+        """
+        try:
+            dataset = gdal.Open(tif_path, gdal.GA_ReadOnly)
+            if dataset is None:
+                return
+            
+            band = dataset.GetRasterBand(1)
+            
+            # 检查是否已有统计信息
+            stats = band.GetStatistics(False, False)  # approx_ok=False, force=False
+            
+            if stats is None or any(stat is None for stat in stats):
+                logger.info(f'Statistics missing for {tif_path}, recalculating...')
+                dataset = None  # 关闭只读模式
+                self._recalculate_statistics(tif_path)
+            else:
+                min_val, max_val, mean_val, std_val = stats
+                logger.info(f'Existing statistics found: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}, std={std_val:.6f}')
+            
+            if dataset:
+                dataset = None
+                
+        except Exception as e:
+            logger.warning(f'Failed to check statistics for {tif_path}: {e}')
+
+    def _remove_auxiliary_files(self):
+        """
+        删除栅格文件的辅助文件，避免使用缓存的旧统计信息
+        这些文件包括 .aux.xml, .ovr 等，主要是 QGIS 和其他 GIS 软件生成的缓存文件
+        """
+        # 需要删除的文件路径列表
+        files_to_remove = [
+            # 原始TIF文件的辅助文件
+            str(self.resource_original_tif_path) + '.aux.xml',
+            str(self.resource_original_tif_path.with_suffix('')) + '.aux.xml',
+            str(self.resource_original_tif_path) + '.ovr',
+            str(self.resource_original_tif_path.with_suffix('')) + '.ovr',
+            
+            # COG文件的辅助文件
+            str(self.cog_tif_path) + '.aux.xml',
+            str(self.cog_tif_path.with_suffix('')) + '.aux.xml', 
+            str(self.cog_tif_path) + '.ovr',
+            str(self.cog_tif_path.with_suffix('')) + '.ovr',
+            
+            # 其他可能的辅助文件格式
+            str(self.resource_original_tif_path.with_suffix('.tif.aux.xml')),
+            str(self.resource_original_tif_path.with_suffix('.tif.ovr')),
+            str(self.cog_tif_path.with_suffix('.tif.aux.xml')),
+            str(self.cog_tif_path.with_suffix('.tif.ovr')),
+        ]
+        
+        removed_count = 0
+        for aux_file_path in files_to_remove:
+            try:
+                if os.path.exists(aux_file_path):
+                    os.remove(aux_file_path)
+                    logger.info(f'Removed auxiliary file: {aux_file_path}')
+                    removed_count += 1
+            except Exception as e:
+                logger.warning(f'Failed to remove auxiliary file {aux_file_path}: {e}')
+        
+        if removed_count > 0:
+            logger.info(f'Removed {removed_count} auxiliary file(s) to ensure fresh statistics calculation')
+        else:
+            logger.debug('No auxiliary files found to remove')
+
     def _create_cloud_optimized_tif(self, input_tif_path: str = None) -> str:
         """
         创建云优化的 GeoTIFF (使用 rio-cogeo)
-        :param input_tif_path: 输入的TIF文件路径
+        :param input_tif_path: 输入的TIF文件路径，如果不提供则使用资源文件夹中的原始TIF
         :return: 云优化的 GeoTIFF 路径
         """
-        # 使用传入的路径，如果没有传入则使用默认路径
-        source_tif_path = input_tif_path if input_tif_path is not None else self.original_tif_path
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        output_tif_path = self.path / f'{self.name}.{timestamp}.cog.tif'
-
-        if output_tif_path.exists():
-            logger.info(f'Cloud Optimized GeoTIFF already exists at {output_tif_path}')
-            return str(output_tif_path)
+        # 使用传入的路径，如果没有传入则使用资源文件夹中的原始TIF
+        source_tif_path = input_tif_path if input_tif_path is not None else str(self.resource_original_tif_path)
+        output_tif_path = self.cog_tif_path
 
         try:
             # 使用 rio-cogeo 创建云优化的 GeoTIFF
@@ -78,7 +205,7 @@ class Raster(IRaster):
             # 使用预定义的 COG 配置 (LZW 压缩)
             profile = cog_profiles.get("lzw")
             
-            # 创建云优化的 GeoTIFF
+            # 创建云优化的 GeoTIFF（替换策略）
             cog_translate(
                 source_tif_path,
                 str(output_tif_path),
@@ -125,22 +252,13 @@ class Raster(IRaster):
         获取云优化的 GeoTIFF，如果不存在则创建
         :return: 云优化的 GeoTIFF 路径
         """
-        # 如果已经有缓存的 COG 路径且文件存在，直接返回
-        if self.cog_tif_path and Path(self.cog_tif_path).exists():
-            return self.cog_tif_path
-
-        # 检查文件夹中是否存在任何 .tif 文件
-        tif_files = list(self.path.glob("*.tif"))
-        if tif_files:
-            # 使用第一个找到的 .tif 文件
-            existing_tif = tif_files[0]
-            self.cog_tif_path = str(existing_tif)
-            logger.info(f'Found existing TIF file at {existing_tif}')
-            return self.cog_tif_path
+        # 如果COG文件存在，直接返回
+        if self.cog_tif_path.exists():
+            return str(self.cog_tif_path)
         
         # 创建 COG 文件
-        self.cog_tif_path = self._create_cloud_optimized_tif()
-        return self.cog_tif_path
+        cog_path = self._create_cloud_optimized_tif()
+        return cog_path
     
     def _get_raster_info(self) -> Dict[str, Any]:
         """
@@ -204,10 +322,13 @@ class Raster(IRaster):
             logger.warning('No feature operations provided for batch update')
             return cog_path
         
+        # 在更新前删除可能存在的辅助文件，避免使用缓存的旧统计信息
+        self._remove_auxiliary_files()
+        
         try:
-            # 直接修改现有的 COG TIF 文件
-            with rasterio.open(cog_path, 'r+', IGNORE_COG_LAYOUT_BREAK='YES') as src:
-                logger.info(f'Starting optimized batch update with {len(feature_operations)} FeatureCollection operations on {cog_path}')
+            # 直接修改资源文件夹中的原始TIF文件
+            with rasterio.open(str(self.resource_original_tif_path), 'r+') as src:
+                logger.info(f'Starting optimized batch update with {len(feature_operations)} FeatureCollection operations on {self.resource_original_tif_path}')
                 
                 # 第一步：解析所有FeatureCollection中的features并计算合并的边界框
                 all_geometries = []
@@ -361,25 +482,24 @@ class Raster(IRaster):
                 src.write(updated_data, 1, window=merged_window)
                 logger.info(f'Completed optimized batch update: applied {len(all_geometries)} geometry operations to merged window {merged_window}')
                         
-            # 在所有操作完成后，重新生成云优化的 GeoTIFF
-            new_cog_path = self._create_cloud_optimized_tif(cog_path)
-            self.cog_tif_path = new_cog_path
-
-            os.remove(cog_path)  # 删除原始 COG 文件
-            logger.info(f'Removed original COG TIF at {cog_path}')
+            # 更新完数据后，重新计算原始TIF文件的统计信息
+            logger.info('Recalculating statistics for updated original TIF file...')
+            self._recalculate_statistics(str(self.resource_original_tif_path))
+                        
+            # 在所有操作完成后，重新生成云优化的 GeoTIFF（替换策略）
+            new_cog_path = self._create_cloud_optimized_tif()
+            logger.info(f'Regenerated Cloud Optimized GeoTIFF at {new_cog_path} after optimized batch update')
 
             # 清理全局范围缓存，因为数据已经更新
             if hasattr(self, '_global_min_max_cache'):
                 delattr(self, '_global_min_max_cache')
                 logger.info('Cleared global min/max cache after optimized batch raster update')
-
-            logger.info(f'Regenerated Cloud Optimized GeoTIFF at {new_cog_path} after optimized batch update')
             
             return new_cog_path
                         
         except Exception as e:
             logger.error(f'Failed to perform optimized batch update raster by features: {e}')
-            return cog_path
+            return str(self.cog_tif_path) if self.cog_tif_path.exists() else ""
 
     def sampling(self, x: float, y: float) -> float:
         """
@@ -425,9 +545,9 @@ class Raster(IRaster):
             logger.error(f'Failed to get raster value at point ({x}, {y}): {e}')
             return None
 
-    def get_tile_png(self, x: int, y: int, z: int) -> bytes:
+    def get_tile_png(self, x: int, y: int, z: int, encoding: str = "terrainrgb") -> bytes:
         """
-        获取指定瓦片的Terrain RGB格式PNG图像数据，使用COGReader优化
+        获取指定瓦片的PNG图像数据，支持多种编码格式
         
         使用rio-tiler的COGReader.tile()方法提供最高效的瓦片生成：
         1. 直接处理瓦片坐标，无需手动边界框转换
@@ -436,13 +556,21 @@ class Raster(IRaster):
         4. 内置坐标系转换和重采样
         5. 优化的内存管理
         
-        生成的PNG使用Mapbox Terrain RGB编码格式，可用于地形渲染和高程计算。
+        支持的编码格式：
+        - "terrainrgb": Mapbox Terrain RGB编码格式，用于地形渲染和高程计算
+        - "uint8": 灰度PNG格式，直接使用原栅格值作为灰度值（栅格值会被限制在0-255范围内）
         
         :param x: 瓦片X坐标
         :param y: 瓦片Y坐标  
         :param z: 缩放级别
-        :return: Terrain RGB格式的256x256像素PNG图像字节数据
+        :param encoding: 编码格式，可选 "terrainrgb" 或 "uint8"，默认为 "terrainrgb"
+        :return: 指定编码格式的256x256像素PNG图像字节数据
         """
+        # 验证编码参数
+        if encoding not in ["terrainrgb", "uint8"]:
+            logger.warning(f'Unsupported encoding format: {encoding}, falling back to terrainrgb')
+            encoding = "terrainrgb"
+            
         cog_path = self.get_cog_tif()
         if not cog_path:
             logger.debug(f'No COG file available for tile generation {x}/{y}/{z}')
@@ -458,8 +586,11 @@ class Raster(IRaster):
                     logger.debug(f'No data available for tile {x}/{y}/{z}')
                     return self._create_transparent_tile(256)
                 
-                # 使用COGReader返回的ImageData生成PNG
-                return self._create_png_from_cog_data(image_data)
+                # 根据编码格式生成PNG
+                if encoding == "terrainrgb":
+                    return self._create_png_from_cog_data(image_data)
+                elif encoding == "uint8":
+                    return self._create_uint8_png_from_cog_data(image_data)
                 
         except Exception as e:
             logger.debug(f'Tile {x}/{y}/{z} not available, returning transparent tile: {e}')
@@ -515,6 +646,84 @@ class Raster(IRaster):
         rgb = np.clip(rgb, 0, 255).astype(np.uint8)
 
         return rgb
+
+    def _create_uint8_png_from_cog_data(self, image_data: ImageData) -> bytes:
+        """
+        从COGReader返回的ImageData创建uint8灰度格式的PNG瓦片
+        
+        :param image_data: COGReader返回的ImageData对象
+        :return: uint8灰度格式的PNG图像字节数据
+        """
+        try:
+            # 获取数据数组，通常是 (bands, height, width) 格式
+            data = image_data.data
+            mask = image_data.mask if image_data.mask is not None else None
+            
+            # 如果是多波段，只使用第一个波段
+            if len(data.shape) == 3 and data.shape[0] > 1:
+                data = data[0]
+                if mask is not None and len(mask.shape) == 3:
+                    mask = mask[0]
+            elif len(data.shape) == 3:
+                data = data[0]
+                if mask is not None and len(mask.shape) == 3:
+                    mask = mask[0]
+            
+            # 确保数据是2D数组
+            if len(data.shape) != 2:
+                logger.error(f'Unexpected data shape: {data.shape}')
+                return self._create_transparent_tile(256)
+            
+            height, width = data.shape
+            
+            # 处理mask，如果没有mask则创建全255的mask
+            if mask is not None:
+                # 确保mask是uint8格式
+                final_mask = mask.astype(np.uint8)
+            else:
+                final_mask = np.full((height, width), 255, dtype=np.uint8)
+            
+            # 检查是否有有效数据
+            if np.sum(final_mask == 255) == 0:
+                # 无有效数据，返回透明瓦片
+                logger.debug('No valid data in tile, returning transparent tile')
+                return self._create_transparent_tile(256)
+            
+            # 将栅格值转换为uint8灰度值
+            # 直接将栅格值乘以10增强对比度
+            gray_data = data.astype(np.float32)
+            
+            # 乘以10增强对比度
+            gray_data = gray_data * 10
+            
+            # 将栅格值限制在uint8范围内（0-255）
+            gray_data = np.clip(gray_data, 0, 255)
+            
+            # 转换为uint8
+            gray_data = gray_data.astype(np.uint8)
+            
+            # 应用mask：无效区域设置为透明
+            rgba_data = np.zeros((height, width, 4), dtype=np.uint8)
+            rgba_data[:, :, 0] = gray_data  # R
+            rgba_data[:, :, 1] = gray_data  # G  
+            rgba_data[:, :, 2] = gray_data  # B
+            rgba_data[:, :, 3] = final_mask  # Alpha
+            
+            # 创建PIL图像
+            image = Image.fromarray(rgba_data, 'RGBA')
+            
+            # 转换为PNG字节数据
+            png_buffer = io.BytesIO()
+            image.save(png_buffer, format='PNG', optimize=True)
+            content = png_buffer.getvalue()
+            png_buffer.close()
+            
+            logger.debug(f'Generated uint8 grayscale PNG: size={len(content)} bytes, value_range=0-{np.max(gray_data[final_mask == 255])}')
+            return content
+            
+        except Exception as e:
+            logger.error(f'Failed to create uint8 grayscale PNG from COGReader data: {e}')
+            return self._create_transparent_tile(256)
 
     def _create_png_from_cog_data(self, image_data: ImageData) -> bytes:
         """
@@ -732,23 +941,47 @@ class Raster(IRaster):
             return {}
 
     def delete_raster(self) -> Dict[str, Any]:
+        """
+        删除栅格资源，包括原始TIF和COG TIF文件
+        """
+        success = True
+        messages = []
+        
+        # 删除原始TIF文件
         if os.path.exists(self.path):
             try:
                 shutil.rmtree(self.path)
-                return {
-                    'success': True,
-                    'message': 'Feature deleted successfully',
-                }
+                messages.append(f'Raster deleted successfully')
             except Exception as e:
-                return {
-                    'success': False,
-                    'message': f'Failed to delete raster directory: {e}',
-                }
-        else:
-            return {
-                'success': False,
-                'message': 'Raster directory does not exist',
-            }
+                success = False
+                messages.append(f'Failed to delete original TIF: {e}')
+        
+        # 删除COG TIF文件
+        if self.cog_tif_path.exists():
+            try:
+                os.remove(self.cog_tif_path)
+                messages.append(f'Deleted COG TIF: {self.cog_tif_path}')
+            except Exception as e:
+                success = False
+                messages.append(f'Failed to delete COG TIF: {e}')
+        
+        # 删除整个目录（如果为空）
+        if self.path.exists():
+            try:
+                # 检查目录是否为空
+                if not any(self.path.iterdir()):
+                    self.path.rmdir()
+                    messages.append(f'Deleted empty directory: {self.path}')
+                else:
+                    messages.append(f'Directory not empty, kept: {self.path}')
+            except Exception as e:
+                success = False
+                messages.append(f'Failed to delete directory: {e}')
+        
+        return {
+            'success': success,
+            'message': '; '.join(messages) if success else f'Failed to delete raster: {"; ".join(messages)}',
+        }
 
     def terminate(self) -> None:
         """

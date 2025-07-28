@@ -37,12 +37,13 @@ class IRaster:
         """
         ...
 
-    def get_tile_png(self, x: int, y: int, z: int) -> bytes:
+    def get_tile_png(self, x: int, y: int, z: int, encoding: str = "terrainrgb") -> bytes:
         """
         获取指定瓦片的PNG图像数据
         :param x: 瓦片X坐标
         :param y: 瓦片Y坐标  
         :param z: 缩放级别
+        :param encoding: 编码格式，可选 "terrainrgb" 或 "uint8"，默认为 "terrainrgb"
         :return: PNG图像的字节数据
         """
         ...
