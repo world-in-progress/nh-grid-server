@@ -134,8 +134,8 @@ def get_raster_sampling(node_key: str, x: float, y: float):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get raster sampling: {str(e)}')
 
-@router.get('/tile/{node_key}/{encoding}/{z}/{x}/{y}.png')
-def get_raster_tile_png(node_key: str, x: int, y: int, z: int, encoding: str = "terrainrgb"):
+@router.get('/tile/{node_key}/{encoding}/{timestamp}/{z}/{x}/{y}.png')
+def get_raster_tile_png(node_key: str, x: int, y: int, z: int, timestamp: int, encoding: str = "terrainrgb"):
     """
     Description
     --
@@ -146,6 +146,7 @@ def get_raster_tile_png(node_key: str, x: int, y: int, z: int, encoding: str = "
     - x: Tile X coordinate  
     - y: Tile Y coordinate
     - z: Zoom level
+    - timestamp: Timestamp for the raster data
     - encoding: Encoding format ("terrainrgb" or "uint8"), default is "terrainrgb"
     """
     try:
