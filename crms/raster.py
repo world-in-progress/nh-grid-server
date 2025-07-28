@@ -545,9 +545,9 @@ class Raster(IRaster):
             logger.error(f'Failed to get raster value at point ({x}, {y}): {e}')
             return None
 
-    def get_tile_png(self, x: int, y: int, z: int) -> bytes:
+    def get_tile_png(self, x: int, y: int, z: int, encoding: str = "terrainrgb") -> bytes:
         """
-        获取指定瓦片的Terrain RGB格式PNG图像数据，使用COGReader优化
+        获取指定瓦片的PNG图像数据，支持多种编码格式
         
         使用rio-tiler的COGReader.tile()方法提供最高效的瓦片生成：
         1. 直接处理瓦片坐标，无需手动边界框转换
@@ -556,13 +556,21 @@ class Raster(IRaster):
         4. 内置坐标系转换和重采样
         5. 优化的内存管理
         
-        生成的PNG使用Mapbox Terrain RGB编码格式，可用于地形渲染和高程计算。
+        支持的编码格式：
+        - "terrainrgb": Mapbox Terrain RGB编码格式，用于地形渲染和高程计算
+        - "uint8": 灰度PNG格式，直接使用原栅格值作为灰度值（栅格值会被限制在0-255范围内）
         
         :param x: 瓦片X坐标
         :param y: 瓦片Y坐标  
         :param z: 缩放级别
-        :return: Terrain RGB格式的256x256像素PNG图像字节数据
+        :param encoding: 编码格式，可选 "terrainrgb" 或 "uint8"，默认为 "terrainrgb"
+        :return: 指定编码格式的256x256像素PNG图像字节数据
         """
+        # 验证编码参数
+        if encoding not in ["terrainrgb", "uint8"]:
+            logger.warning(f'Unsupported encoding format: {encoding}, falling back to terrainrgb')
+            encoding = "terrainrgb"
+            
         cog_path = self.get_cog_tif()
         if not cog_path:
             logger.debug(f'No COG file available for tile generation {x}/{y}/{z}')
@@ -578,8 +586,11 @@ class Raster(IRaster):
                     logger.debug(f'No data available for tile {x}/{y}/{z}')
                     return self._create_transparent_tile(256)
                 
-                # 使用COGReader返回的ImageData生成PNG
-                return self._create_png_from_cog_data(image_data)
+                # 根据编码格式生成PNG
+                if encoding == "terrainrgb":
+                    return self._create_png_from_cog_data(image_data)
+                elif encoding == "uint8":
+                    return self._create_uint8_png_from_cog_data(image_data)
                 
         except Exception as e:
             logger.debug(f'Tile {x}/{y}/{z} not available, returning transparent tile: {e}')
@@ -635,6 +646,84 @@ class Raster(IRaster):
         rgb = np.clip(rgb, 0, 255).astype(np.uint8)
 
         return rgb
+
+    def _create_uint8_png_from_cog_data(self, image_data: ImageData) -> bytes:
+        """
+        从COGReader返回的ImageData创建uint8灰度格式的PNG瓦片
+        
+        :param image_data: COGReader返回的ImageData对象
+        :return: uint8灰度格式的PNG图像字节数据
+        """
+        try:
+            # 获取数据数组，通常是 (bands, height, width) 格式
+            data = image_data.data
+            mask = image_data.mask if image_data.mask is not None else None
+            
+            # 如果是多波段，只使用第一个波段
+            if len(data.shape) == 3 and data.shape[0] > 1:
+                data = data[0]
+                if mask is not None and len(mask.shape) == 3:
+                    mask = mask[0]
+            elif len(data.shape) == 3:
+                data = data[0]
+                if mask is not None and len(mask.shape) == 3:
+                    mask = mask[0]
+            
+            # 确保数据是2D数组
+            if len(data.shape) != 2:
+                logger.error(f'Unexpected data shape: {data.shape}')
+                return self._create_transparent_tile(256)
+            
+            height, width = data.shape
+            
+            # 处理mask，如果没有mask则创建全255的mask
+            if mask is not None:
+                # 确保mask是uint8格式
+                final_mask = mask.astype(np.uint8)
+            else:
+                final_mask = np.full((height, width), 255, dtype=np.uint8)
+            
+            # 检查是否有有效数据
+            if np.sum(final_mask == 255) == 0:
+                # 无有效数据，返回透明瓦片
+                logger.debug('No valid data in tile, returning transparent tile')
+                return self._create_transparent_tile(256)
+            
+            # 将栅格值转换为uint8灰度值
+            # 直接将栅格值乘以10增强对比度
+            gray_data = data.astype(np.float32)
+            
+            # 乘以10增强对比度
+            gray_data = gray_data * 10
+            
+            # 将栅格值限制在uint8范围内（0-255）
+            gray_data = np.clip(gray_data, 0, 255)
+            
+            # 转换为uint8
+            gray_data = gray_data.astype(np.uint8)
+            
+            # 应用mask：无效区域设置为透明
+            rgba_data = np.zeros((height, width, 4), dtype=np.uint8)
+            rgba_data[:, :, 0] = gray_data  # R
+            rgba_data[:, :, 1] = gray_data  # G  
+            rgba_data[:, :, 2] = gray_data  # B
+            rgba_data[:, :, 3] = final_mask  # Alpha
+            
+            # 创建PIL图像
+            image = Image.fromarray(rgba_data, 'RGBA')
+            
+            # 转换为PNG字节数据
+            png_buffer = io.BytesIO()
+            image.save(png_buffer, format='PNG', optimize=True)
+            content = png_buffer.getvalue()
+            png_buffer.close()
+            
+            logger.debug(f'Generated uint8 grayscale PNG: size={len(content)} bytes, value_range=0-{np.max(gray_data[final_mask == 255])}')
+            return content
+            
+        except Exception as e:
+            logger.error(f'Failed to create uint8 grayscale PNG from COGReader data: {e}')
+            return self._create_transparent_tile(256)
 
     def _create_png_from_cog_data(self, image_data: ImageData) -> bytes:
         """

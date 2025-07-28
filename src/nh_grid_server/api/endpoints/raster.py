@@ -134,22 +134,23 @@ def get_raster_sampling(node_key: str, x: float, y: float):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to get raster sampling: {str(e)}')
 
-@router.get('/tile/{node_key}/{z}/{x}/{y}.png')
-def get_raster_tile_png(node_key: str, x: int, y: int, z: int):
+@router.get('/tile/{node_key}/{encoding}/{z}/{x}/{y}.png')
+def get_raster_tile_png(node_key: str, x: int, y: int, z: int, encoding: str = "terrainrgb"):
     """
     Description
     --
     Get raster tile as PNG image using COG optimization.
     
     Parameters:
-    - raster_name: Name of the raster
+    - node_key: Key of the raster node
     - x: Tile X coordinate  
     - y: Tile Y coordinate
     - z: Zoom level
+    - encoding: Encoding format ("terrainrgb" or "uint8"), default is "terrainrgb"
     """
     try:
         with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
-            png_data = raster.get_tile_png(x, y, z)
+            png_data = raster.get_tile_png(x, y, z, encoding)
             if not png_data:
                 raise HTTPException(status_code=404, detail='Tile not found')
             
