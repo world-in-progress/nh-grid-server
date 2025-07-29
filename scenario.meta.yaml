@@ -20,6 +20,9 @@ meta:
     - name: Raster
       icrm: IRaster
       crm_launcher: scripts/raster.crm.py
+    - name: Common
+      icrm: ICommon
+      crm_launcher: scripts/common.crm.py
   scenario:
     name: root
     children:
@@ -52,6 +55,19 @@ meta:
       - name: rainfalls
         children:
           - name: rainfall
+            crm: Common
+      - name: gates
+        children:
+          - name: gate
+            crm: Common
+      - name: tides
+        children:
+          - name: tide
+            crm: Common
+      - name: inps
+        children:
+          - name: inp
+            crm: Common
       - name: solutions
         children:
           - name: solution

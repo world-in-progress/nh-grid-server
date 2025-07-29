@@ -6,6 +6,7 @@ from icrms.isolution import ISolution
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT
 from fastapi import APIRouter, HTTPException, Body
+from icrms.itreeger import ReuseAction, CRMDuration
 
 from ...schemas.solution import (
     CreateSolutionBody, ActionType, ActionTypeResponse, ActionTypeDetailResponse,
@@ -289,10 +290,9 @@ def add_human_action(body: AddHumanActionBody=Body(..., description='add human a
     Add a human action.
     """
     try:
-        node_key = f'root.solutions.{body.solution_name}'
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(body.node_key, ISolution) as solution:
             action_id = solution.add_human_action(body.action_type, body.params)
-        BT.instance.mount_node("human_action", f'{node_key}.actions.human_actions.{action_id}')
+        BT.instance.mount_node("human_action", f'{body.node_key}.actions.human_actions.{action_id}')
         return BaseResponse(
             success=True,
             message="Action added successfully"
@@ -300,13 +300,12 @@ def add_human_action(body: AddHumanActionBody=Body(..., description='add human a
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to add human action: {str(e)}')
 
-@router.get('/get_human_actions/{solution_name}', response_model=ActionTypeResponse)
-def get_human_actions(solution_name: str):
+@router.get('/get_human_actions/{node_key}', response_model=ActionTypeResponse)
+def get_human_actions(node_key: str):
     """
     Get human actions for a solution.
     """
     try:
-        node_key = f'root.solutions.{solution_name}'
         with BT.instance.connect(node_key, ISolution) as solution:
             actions = solution.get_human_actions()
         return ActionTypeResponse(
@@ -324,8 +323,7 @@ def update_human_action(body: UpdateHumanActionBody=Body(..., description='updat
     Update a human action.
     """
     try:
-        node_key = f'root.solutions.{body.solution_name}'
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(body.node_key, ISolution) as solution:
             solution.update_human_action(body.action_id, body.params)
         return BaseResponse(
             success=True,
@@ -342,10 +340,9 @@ def delete_human_action(body: DeleteHumanActionBody=Body(..., description='delet
     Delete a human action.
     """
     try:
-        node_key = f'root.solutions.{body.solution_name}'
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(body.node_key, ISolution) as solution:
             solution.delete_human_action(body.action_id)
-        BT.instance.unmount_node(f'{node_key}.actions.human_actions.{body.action_id}')
+        BT.instance.unmount_node(f'{body.node_key}.actions.human_actions.{body.action_id}')
         return BaseResponse(
             success=True,
             message="Action deleted successfully"
@@ -354,3 +351,18 @@ def delete_human_action(body: DeleteHumanActionBody=Body(..., description='delet
         raise HTTPException(status_code=500, detail=f'Failed to delete human action: {str(e)}')
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to add human action: {str(e)}')
+    
+@router.get('/package/{node_key}', response_model=BaseResponse)
+def package_solution(node_key: str):
+    """
+    Package a solution.
+    """
+    try:
+        with BT.instance.connect(node_key, ISolution) as solution:
+            package_path = solution.package()
+        return BaseResponse(
+            success=True,
+            message="Solution packaged successfully at " + package_path
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to package solution: {str(e)}')

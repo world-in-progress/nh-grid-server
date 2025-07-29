@@ -57,7 +57,7 @@ class AddGateParams(BaseModel):
     feature: dict[str, Any]
 
 class AddHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_type: str
     params: Union[
         AddFenceParams, 
@@ -76,7 +76,7 @@ class AddHumanActionBody(BaseModel):
         return data
 
 class UpdateHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_id: str
     action_type: str
     params: Union[
@@ -96,5 +96,5 @@ class UpdateHumanActionBody(BaseModel):
         return data
 
 class DeleteHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_id: str

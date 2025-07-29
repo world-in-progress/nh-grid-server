@@ -23,12 +23,8 @@ def create_raster(body: CreateRasterBody=Body(..., description='create raster'))
     Create a raster.
     """
     try:
-        if body.type == 'dem':
-            node_key = f'root.dems.{body.name}'
-            BT.instance.mount_node("dem", node_key, body.model_dump())
-        elif body.type == 'lum':
-            node_key = f'root.lums.{body.name}'
-            BT.instance.mount_node("lum", node_key, body.model_dump())
+        node_key = f'root.{body.type}s.{body.name}'
+        BT.instance.mount_node(body.type, node_key, body.model_dump())
         return BaseResponse(
             success=True,
             message=node_key
