@@ -8,6 +8,7 @@ from starlette.responses import Response
 from ...core.bootstrapping_treeger import BT
 from ...schemas.project import ResourceCRMStatus
 from ...schemas.proxy import DiscoverBody, DiscoverResponse, RelayResponse
+from icrms.itreeger import ReuseAction, CRMDuration
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def discover(body: DiscoverBody=Body(..., description='discover')):
 
     node_key = body.node_key
     try:
-        BT.instance.activate_node(node_key)
+        BT.instance.activate_node(node_key, ReuseAction.REPLACE, CRMDuration.Forever)
         # 获取本机IP
         hostname = socket.gethostname()
         ip = socket.gethostbyname(hostname)

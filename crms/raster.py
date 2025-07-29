@@ -53,10 +53,10 @@ class Raster(IRaster):
         
         # 缓存栅格信息
         self._raster_info = None
-
-        with rasterio.open(self.cog_tif_path) as src:
-            self.cog_src = src
-            self.cog_tif = src.read(1)
+        if self.cog_tif_path.exists():
+            with rasterio.open(self.cog_tif_path) as src:
+                self.cog_src = src
+                self.cog_tif = src.read(1)
 
     def _initialize_original_tif(self):
         """
