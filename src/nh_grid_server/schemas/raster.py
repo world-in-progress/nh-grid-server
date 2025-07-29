@@ -4,13 +4,9 @@ from pydantic import BaseModel
 
 from icrms.iraster import RasterOperation
 
-class RasterType(str, Enum):
-    DEM = "dem"
-    LUM = "lum"
-
 class CreateRasterBody(BaseModel):
     name: str
-    type: RasterType
+    type: str
     original_tif_path: str
 
 class GetCogTifResponse(BaseModel):

@@ -3,21 +3,6 @@ import c_two as cc
 @cc.icrm
 class ISolution:
 
-    # Model Server to Resource Server
-    def clone_env(self) -> dict:
-        """
-        克隆环境变量
-        :return: 环境变量
-        """
-        ...
-
-    def get_env(self) -> dict:
-        """
-        获取环境变量字典
-        :return: 环境变量字典
-        """
-        ...
-
     def get_action_types(self) -> list[str]:
         """
         获取动作类型列表
@@ -68,5 +53,20 @@ class ISolution:
         """
         删除解决方案
         :return: None
+        """
+        ...
+
+    # From Model Server
+    def clone_package(self) -> dict:
+        """
+        克隆解决方案包
+        :return: 解决方案包
+        """
+        ...
+
+    def get_env(self) -> dict:
+        """
+        获取环境变量字典
+        :return: 环境变量字典
         """
         ...

@@ -32,27 +32,6 @@ class Solution(ISolution):
         self.env_path.mkdir(parents=True, exist_ok=True)
         self.human_actions_path.mkdir(parents=True, exist_ok=True)
 
-    def clone_env(self) -> dict:
-        env_data = {}
-        for key, value in self.env.items():
-            if isinstance(value, str) and os.path.isfile(value):
-                try:
-                    with open(value, 'r', encoding='utf-8') as f:
-                        content = f.readlines()
-                except UnicodeDecodeError:
-                    with open(value, 'rb') as f:
-                        content = f.read()
-                env_data[key] = {
-                    'file_name': os.path.basename(value),
-                    'content': content
-                }
-            else:
-                env_data[key] = value
-        return env_data
-    
-    def get_env(self) -> dict:
-        return self.env
-
     def get_action_types(self) -> list[str]:
         return self.action_types
     
@@ -242,6 +221,43 @@ class Solution(ISolution):
             logger.info(f'Solution directory {self.path} deleted successfully')
         else:
             logger.warning(f'Solution directory {self.path} does not exist')
+
+    # From Model Server
+    def clone_package(self) -> dict:
+        """
+        获取解决方案的压缩包供其他服务访问
+        :return: 包含压缩包信息和数据的字典
+        """
+        try:
+            package_path = self.path / f'{self.name}_package.zip'
+            
+            if not package_path.exists():
+                logger.warning(f'Package file {package_path} does not exist')
+                return {
+                    "status": False,
+                    "message": f"Package file for solution '{self.name}' not found",
+                    "package_data": None
+                }
+            
+            # 读取压缩包二进制数据
+            with open(package_path, 'rb') as package_file:
+                package_data = package_file.read()
+            
+            return {
+                "status": True,
+                "message": "Package ready for download",
+                "package_data": package_data
+            }
+        except Exception as e:
+            logger.error(f'Failed to prepare package for download: {str(e)}')
+            return {
+                "status": False,
+                "message": f"Failed to prepare package: {str(e)}",
+                "package_data": None
+            }
+    
+    def get_env(self) -> dict:
+        return self.env
 
     def terminate(self) -> None:
         # Do something need to be saved
