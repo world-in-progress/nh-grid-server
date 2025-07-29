@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 import json
 import logging
@@ -24,10 +25,12 @@ class Solution(ISolution):
         self.env = env
         self.action_types = action_types
         self.path = Path(f'{settings.SOLUTION_DIR}{self.name}')
-        self.actions_path = self.path / 'actions' / 'human_actions'
+        self.env_path = self.path / 'env'
+        self.human_actions_path = self.path / 'actions' / 'human_actions'
 
         self.path.mkdir(parents=True, exist_ok=True)
-        self.actions_path.mkdir(parents=True, exist_ok=True)
+        self.env_path.mkdir(parents=True, exist_ok=True)
+        self.human_actions_path.mkdir(parents=True, exist_ok=True)
 
     def clone_env(self) -> dict:
         env_data = {}
@@ -55,7 +58,7 @@ class Solution(ISolution):
     
     def add_human_action(self, action_type: str, params: dict) -> str:
         action_id = str(int(time.time() * 1000))
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         
         # 获取params数据并去掉action_type字段
         params_data = params.model_dump()
@@ -69,7 +72,7 @@ class Solution(ISolution):
         return action_id
 
     def update_human_action(self, action_id, params):
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         if not action_path.exists():
             raise FileNotFoundError(f'Action file {action_path} does not exist.')
         
@@ -84,7 +87,7 @@ class Solution(ISolution):
             }, f, ensure_ascii=False, indent=4)
 
     def delete_human_action(self, action_id):
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         if action_path.exists():
             action_path.unlink()
         else:
@@ -94,12 +97,12 @@ class Solution(ISolution):
         actions = []
         try:
             # 检查actions目录是否存在
-            if not self.actions_path.exists():
-                logger.warning(f'Actions path {self.actions_path} does not exist')
+            if not self.human_actions_path.exists():
+                logger.warning(f'Actions path {self.human_actions_path} does not exist')
                 return actions
             
             # 遍历actions目录下的所有JSON文件
-            for action_file in self.actions_path.glob('*.json'):
+            for action_file in self.human_actions_path.glob('*.json'):
                 try:
                     with open(action_file, 'r', encoding='utf-8') as f:
                         action_data = json.load(f)
@@ -131,7 +134,7 @@ class Solution(ISolution):
                 ne_list.append(grid.ne)
                 print(f"Grid {grid.index} - Altitude: {grid.altitude}, Type: {grid.type}")
 
-            ne_path = self.path / 'ne.txt'
+            ne_path = self.env_path / 'ne.txt'
 
             with open(ne_path, 'w', encoding='utf-8') as f:
                 for ne in ne_list:
@@ -158,7 +161,7 @@ class Solution(ISolution):
                 ns_list.append(edge.ns)
                 print(f"Edge {edge.index} - Altitude: {edge.altitude}, Type: {edge.type}")
 
-            ns_path = self.path / 'ns.txt'
+            ns_path = self.env_path / 'ns.txt'
 
             with open(ns_path, 'w', encoding='utf-8') as f:
                 for ns in ns_list:
@@ -174,8 +177,6 @@ class Solution(ISolution):
             return {"status": False, "message": str(e)}
 
     def package(self) -> str:
-        package_path = self.path / f'{self.name}_package.zip'
-
         treeger = Treeger()
         grid_node_key = self.env.get('grid_node_key')
         dem_node_key = self.env.get('dem_node_key')
@@ -204,15 +205,43 @@ class Solution(ISolution):
             logger.error(f'NS sampling failed: {ns_sampling_result.get("message", "")}')
 
         # 2. copy common files
-        rainfall_crm.copy_to(self.path)
-        gate_crm.copy_to(self.path)
-        tide_crm.copy_to(self.path)
-        inp_crm.copy_to(self.path)
+        rainfall_crm.copy_to(self.env_path)
+        gate_crm.copy_to(self.env_path)
+        tide_crm.copy_to(self.env_path)
+        inp_crm.copy_to(self.env_path)
 
-        # TODO: 3. create package
+        # 3. create package
+        package_path = self.path / f'{self.name}_package.zip'
+        with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as package_zip:
+            # 添加solution目录中的所有文件和文件夹
+            for root, dirs, files in os.walk(self.path):
+                root_path = Path(root)
+                
+                # 跳过生成的压缩包文件本身
+                if root_path == self.path and f'{self.name}_package.zip' in files:
+                    files.remove(f'{self.name}_package.zip')
+                
+                # 添加所有文件
+                for file in files:
+                    file_path = root_path / file
+                    arcname = file_path.relative_to(self.path)
+                    package_zip.write(file_path, arcname)
 
         logger.info(f'Package created: {package_path}')
         return str(package_path)
+
+    def delete_solution(self) -> None:
+        """
+        删除解决方案
+        :return: None
+        """
+        ...
+        # 删除解决方案目录
+        if self.path.exists():
+            shutil.rmtree(self.path)
+            logger.info(f'Solution directory {self.path} deleted successfully')
+        else:
+            logger.warning(f'Solution directory {self.path} does not exist')
 
     def terminate(self) -> None:
         # Do something need to be saved
