@@ -290,7 +290,7 @@ def add_human_action(body: AddHumanActionBody=Body(..., description='add human a
     Add a human action.
     """
     try:
-        with BT.instance.connect(body.node_key, ISolution) as solution:
+        with BT.instance.connect(body.node_key, ISolution, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as solution:
             action_id = solution.add_human_action(body.action_type, body.params)
         BT.instance.mount_node("human_action", f'{body.node_key}.actions.human_actions.{action_id}')
         return BaseResponse(
@@ -358,7 +358,7 @@ def package_solution(node_key: str):
     Package a solution.
     """
     try:
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(node_key, ISolution, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as solution:
             package_path = solution.package()
         return BaseResponse(
             success=True,
@@ -366,3 +366,19 @@ def package_solution(node_key: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to package solution: {str(e)}')
+    
+@router.delete('/{node_key}', response_model=BaseResponse)
+def delete_solution(node_key: str):
+    """
+    Delete a solution.
+    """
+    try:
+        with BT.instance.connect(node_key, ISolution) as solution:
+            solution.delete_solution()
+        BT.instance.unmount_node(node_key)
+        return BaseResponse(
+            success=True,
+            message="Solution deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to delete solution: {str(e)}')

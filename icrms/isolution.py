@@ -63,3 +63,10 @@ class ISolution:
         :return: 打包结果
         """
         ...
+
+    def delete_solution(self) -> None:
+        """
+        删除解决方案
+        :return: None
+        """
+        ...
