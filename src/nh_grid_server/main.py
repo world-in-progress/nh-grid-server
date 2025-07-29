@@ -26,6 +26,9 @@ async def lifespan(app: FastAPI):
     BT.instance.mount_node('lums', 'root.lums')
     BT.instance.mount_node('vectors', 'root.vectors')
     BT.instance.mount_node('rainfalls', 'root.rainfalls')
+    BT.instance.mount_node('gates', 'root.gates')
+    BT.instance.mount_node('tides', 'root.tides')
+    BT.instance.mount_node('inps', 'root.inps')
     BT.instance.mount_node('solutions', 'root.solutions')
     BT.instance.mount_node('simulations', 'root.simulations')
 

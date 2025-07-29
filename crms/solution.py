@@ -1,115 +1,22 @@
 import os
+import shutil
 import time
 import json
-import struct
 import logging
+import zipfile
 import c_two as cc
 from pathlib import Path
+from crms.grid import Grid
+from crms.common import Common
+from crms.raster import Raster
+from crms.treeger import Treeger
 
 from icrms.isolution import ISolution
 from src.nh_grid_server.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-class HydroElement:
-    def __init__(self, data: bytes):
-        # Unpack index, bounds and edge counts
-        index, min_x, min_y, max_x, max_y, left_edge_num, right_edge_num, bottom_edge_num, top_edge_num = struct.unpack('!QddddBBBB', data[:44])
-        self.index: int = index
-        self.bounds: tuple[float, float, float, float] = (min_x, min_y, max_x, max_y)
-
-        # Unpack edges
-        total_edge_num = left_edge_num + right_edge_num + bottom_edge_num + top_edge_num
-        edge_coords_types = '!' + 'Q' * total_edge_num
-        edges: list[int] = list(struct.unpack(edge_coords_types, data[44:]))
-        
-        # Calculate edge starts
-        left_edge_start = 0
-        right_edge_start = left_edge_num
-        bottom_edge_start = right_edge_start + right_edge_num
-        top_edge_start = bottom_edge_start + bottom_edge_num
-        
-        # Extract edges
-        self.left_edges: list[int] = edges[left_edge_start:right_edge_start]
-        self.right_edges: list[int] = edges[right_edge_start:bottom_edge_start]
-        self.bottom_edges: list[int] = edges[bottom_edge_start:top_edge_start]
-        self.top_edges: list[int] = edges[top_edge_start:]
-
-        # Default attributes (can be modified later)
-        self.altitude = -9999.0     # placeholder for altitude
-        self.type = 0               # default element type (0 for hydro default)
-    
-    @property
-    def center(self) -> tuple[float, float, float]:
-        return (
-            (self.bounds[0] + self.bounds[2]) / 2.0,  # center x
-            (self.bounds[1] + self.bounds[3]) / 2.0,  # center y
-            self.altitude,                            # center z
-        )
-    
-    @property
-    def ne(self) -> list[int | float]:
-        return [
-            self.index,                                     # element index
-            len(self.left_edges),                           # number of left edges
-            len(self.right_edges),                          # number of right edges
-            len(self.bottom_edges),                         # number of bottom edges
-            len(self.top_edges),                            # number of top edges
-            *self.left_edges,                               # left edge indices
-            *self.right_edges,                              # right edge indices
-            *self.bottom_edges,                             # bottom edge indices
-            *self.top_edges,                                # top edge indices
-            *self.center,                                   # center coordinates (x, y, z)
-            self.type,                                      # element type
-        ]
-
-class HydroSide:
-    def __init__(self, data: bytes):
-        # Unpack index, direction, bounds and adjacent grid indices
-        index, direction, min_x, min_y, max_x, max_y, grid_index_a, grid_index_b = struct.unpack('!QBddddQQ', data)
-        self.index = index
-        self.direction = direction
-        self.bounds = (min_x, min_y, max_x, max_y)
-        self.grid_index_a = grid_index_a
-        self.grid_index_b = grid_index_b
-        
-        # Default attributes (can be modified later)
-        self.altitude = -9999.0  # placeholder for altitude
-        self.type = 0            # default side type (0 for hydro default)
-    
-    @property
-    def length(self) -> float:
-        return (self.bounds[2] - self.bounds[0]) if self.direction == 1 else (self.bounds[3] - self.bounds[1])
-    
-    @property
-    def center(self) -> tuple[float, float, float]:
-        return (
-            (self.bounds[0] + self.bounds[2]) / 2.0,  # center x
-            (self.bounds[1] + self.bounds[3]) / 2.0,  # center y
-            self.altitude,                            # center z
-        )
-    
-    @property
-    def ns(self) -> list[int | float]:
-        left_grid_index, right_grid_index, bottom_grid_index, top_grid_index = 0, 0, 0, 0
-        if self.direction == 0: # vertical side
-            left_grid_index = self.grid_index_a if self.grid_index_a is not None else 0
-            right_grid_index = self.grid_index_b if self.grid_index_b is not None else 0
-        else: # horizontal side
-            top_grid_index = self.grid_index_a if self.grid_index_a is not None else 0
-            bottom_grid_index = self.grid_index_b if self.grid_index_b is not None else 0
-            
-        return [
-            self.index,             # side index
-            self.direction,         # direction (0 for vertical, 1 for horizontal)
-            left_grid_index,        # left grid index (1-based)
-            right_grid_index,       # right grid index (1-based)
-            bottom_grid_index,      # bottom grid index (1-based)
-            top_grid_index,         # top grid index (1-based)
-            self.length,            # length of the side
-            *self.center,           # center coordinates (x, y, z)
-            self.type,              # side type
-        ]
+DEFAULT_SRC_CRS = "EPSG:2326"
 
 @cc.iicrm
 class Solution(ISolution):
@@ -118,10 +25,12 @@ class Solution(ISolution):
         self.env = env
         self.action_types = action_types
         self.path = Path(f'{settings.SOLUTION_DIR}{self.name}')
-        self.actions_path = self.path / 'actions' / 'human_actions'
+        self.env_path = self.path / 'env'
+        self.human_actions_path = self.path / 'actions' / 'human_actions'
 
         self.path.mkdir(parents=True, exist_ok=True)
-        self.actions_path.mkdir(parents=True, exist_ok=True)
+        self.env_path.mkdir(parents=True, exist_ok=True)
+        self.human_actions_path.mkdir(parents=True, exist_ok=True)
 
     def clone_env(self) -> dict:
         env_data = {}
@@ -149,7 +58,7 @@ class Solution(ISolution):
     
     def add_human_action(self, action_type: str, params: dict) -> str:
         action_id = str(int(time.time() * 1000))
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         
         # 获取params数据并去掉action_type字段
         params_data = params.model_dump()
@@ -163,7 +72,7 @@ class Solution(ISolution):
         return action_id
 
     def update_human_action(self, action_id, params):
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         if not action_path.exists():
             raise FileNotFoundError(f'Action file {action_path} does not exist.')
         
@@ -178,7 +87,7 @@ class Solution(ISolution):
             }, f, ensure_ascii=False, indent=4)
 
     def delete_human_action(self, action_id):
-        action_path = self.actions_path / f'{action_id}.json'
+        action_path = self.human_actions_path / f'{action_id}.json'
         if action_path.exists():
             action_path.unlink()
         else:
@@ -188,12 +97,12 @@ class Solution(ISolution):
         actions = []
         try:
             # 检查actions目录是否存在
-            if not self.actions_path.exists():
-                logger.warning(f'Actions path {self.actions_path} does not exist')
+            if not self.human_actions_path.exists():
+                logger.warning(f'Actions path {self.human_actions_path} does not exist')
                 return actions
             
             # 遍历actions目录下的所有JSON文件
-            for action_file in self.actions_path.glob('*.json'):
+            for action_file in self.human_actions_path.glob('*.json'):
                 try:
                     with open(action_file, 'r', encoding='utf-8') as f:
                         action_data = json.load(f)
@@ -212,6 +121,127 @@ class Solution(ISolution):
             logger.error(f'Failed to get human actions: {str(e)}')
         
         return actions
+
+    def ne_sampling(self, dem_crm, lum_crm, grid_list) -> dict:
+        try:
+            ne_list = []
+            for grid in grid_list:
+                center = grid.center
+                x = center[0]
+                y = center[1]
+                grid.altitude = dem_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
+                grid.type = lum_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
+                ne_list.append(grid.ne)
+                print(f"Grid {grid.index} - Altitude: {grid.altitude}, Type: {grid.type}")
+
+            ne_path = self.env_path / 'ne.txt'
+
+            with open(ne_path, 'w', encoding='utf-8') as f:
+                for ne in ne_list:
+                    if isinstance(ne, (list, tuple)):
+                        # 将列表元素用空格或逗号分隔
+                        f.write(' '.join(map(str, ne)) + '\n')
+                    else:
+                        f.write(str(ne) + '\n')
+
+            return {"status": True, "message": "Sampling completed successfully"}
+        except Exception as e:
+            logger.error(f'Failed to perform sampling: {str(e)}')
+            return {"status": False, "message": str(e)}
+
+    def ns_sampling(self, dem_crm, lum_crm, edge_list) -> dict:
+        try:
+            ns_list = []
+            for edge in edge_list:
+                center = edge.center
+                x = center[0]
+                y = center[1]
+                edge.altitude = dem_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
+                edge.type = lum_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
+                ns_list.append(edge.ns)
+                print(f"Edge {edge.index} - Altitude: {edge.altitude}, Type: {edge.type}")
+
+            ns_path = self.env_path / 'ns.txt'
+
+            with open(ns_path, 'w', encoding='utf-8') as f:
+                for ns in ns_list:
+                    if isinstance(ns, (list, tuple)):
+                        # 将列表元素用空格或逗号分隔
+                        f.write(' '.join(map(str, ns)) + '\n')
+                    else:
+                        f.write(str(ns) + '\n')
+
+            return {"status": True, "message": "Sampling completed successfully"}
+        except Exception as e:
+            logger.error(f'Failed to perform sampling: {str(e)}')
+            return {"status": False, "message": str(e)}
+
+    def package(self) -> str:
+        treeger = Treeger()
+        grid_node_key = self.env.get('grid_node_key')
+        dem_node_key = self.env.get('dem_node_key')
+        lum_node_key = self.env.get('lum_node_key')
+        rainfall_node_key = self.env.get('rainfall_node_key')
+        gate_node_key = self.env.get('gate_node_key')
+        tide_node_key = self.env.get('tide_node_key')
+        inp_node_key = self.env.get('inp_node_key')
+
+        grid_crm = treeger.trigger(grid_node_key, Grid)
+        dem_crm = treeger.trigger(dem_node_key, Raster)
+        lum_crm = treeger.trigger(lum_node_key, Raster)
+        rainfall_crm = treeger.trigger(rainfall_node_key, Common)
+        gate_crm = treeger.trigger(gate_node_key, Common)
+        tide_crm = treeger.trigger(tide_node_key, Common)
+        inp_crm = treeger.trigger(inp_node_key, Common)
+
+        # 1. ne and ns sampling
+        grid_list = grid_crm.parse_grid_records()
+        edge_list = grid_crm.parse_edge_records()
+        ne_sampling_result = self.ne_sampling(dem_crm, lum_crm, grid_list)
+        ns_sampling_result = self.ns_sampling(dem_crm, lum_crm, edge_list)
+        if not ne_sampling_result.get('status', True):
+            logger.error(f'NE sampling failed: {ne_sampling_result.get("message", "")}')
+        if not ns_sampling_result.get('status', True):
+            logger.error(f'NS sampling failed: {ns_sampling_result.get("message", "")}')
+
+        # 2. copy common files
+        rainfall_crm.copy_to(self.env_path)
+        gate_crm.copy_to(self.env_path)
+        tide_crm.copy_to(self.env_path)
+        inp_crm.copy_to(self.env_path)
+
+        # 3. create package
+        package_path = self.path / f'{self.name}_package.zip'
+        with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as package_zip:
+            # 添加solution目录中的所有文件和文件夹
+            for root, dirs, files in os.walk(self.path):
+                root_path = Path(root)
+                
+                # 跳过生成的压缩包文件本身
+                if root_path == self.path and f'{self.name}_package.zip' in files:
+                    files.remove(f'{self.name}_package.zip')
+                
+                # 添加所有文件
+                for file in files:
+                    file_path = root_path / file
+                    arcname = file_path.relative_to(self.path)
+                    package_zip.write(file_path, arcname)
+
+        logger.info(f'Package created: {package_path}')
+        return str(package_path)
+
+    def delete_solution(self) -> None:
+        """
+        删除解决方案
+        :return: None
+        """
+        ...
+        # 删除解决方案目录
+        if self.path.exists():
+            shutil.rmtree(self.path)
+            logger.info(f'Solution directory {self.path} deleted successfully')
+        else:
+            logger.warning(f'Solution directory {self.path} does not exist')
 
     def terminate(self) -> None:
         # Do something need to be saved

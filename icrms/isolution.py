@@ -56,3 +56,17 @@ class ISolution:
         :return: 人工操作列表
         """
         ...
+
+    def package(self) -> str:
+        """
+        打包解决方案
+        :return: 打包结果
+        """
+        ...
+
+    def delete_solution(self) -> None:
+        """
+        删除解决方案
+        :return: None
+        """
+        ...

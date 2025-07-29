@@ -32,16 +32,10 @@ class CreateSolutionBody(BaseModel):
     env: dict
     action_types: list[str]    
 
-class LanduseType(str, Enum):
-    POND = "pond"
-    FENCE = "fence"
-    DRAIN = "drain"
-    DAM = "dam"
-
 class AddFenceParams(BaseModel):
     action_type: Literal["add_fence"] = Field(default="add_fence", description="参数类型标识")
     elevation_delta: float | None = None
-    landuse_type: LanduseType | None = None
+    landuse_type: int | None = None
     feature: dict[str, Any]
 
 class TransferWaterParams(BaseModel):
@@ -57,7 +51,7 @@ class AddGateParams(BaseModel):
     feature: dict[str, Any]
 
 class AddHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_type: str
     params: Union[
         AddFenceParams, 
@@ -76,7 +70,7 @@ class AddHumanActionBody(BaseModel):
         return data
 
 class UpdateHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_id: str
     action_type: str
     params: Union[
@@ -96,5 +90,5 @@ class UpdateHumanActionBody(BaseModel):
         return data
 
 class DeleteHumanActionBody(BaseModel):
-    solution_name: str
+    node_key: str
     action_id: str

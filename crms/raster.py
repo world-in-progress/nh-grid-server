@@ -54,6 +54,10 @@ class Raster(IRaster):
         # 缓存栅格信息
         self._raster_info = None
 
+        with rasterio.open(self.cog_tif_path) as src:
+            self.cog_src = src
+            self.cog_tif = src.read(1)
+
     def _initialize_original_tif(self):
         """
         初始化时拷贝原始TIF到资源文件夹，并重新计算统计信息
@@ -501,7 +505,7 @@ class Raster(IRaster):
             logger.error(f'Failed to perform optimized batch update raster by features: {e}')
             return str(self.cog_tif_path) if self.cog_tif_path.exists() else ""
 
-    def sampling(self, x: float, y: float) -> float:
+    def sampling(self, x: float, y: float, src_crs: str = "EPSG:4326") -> float:
         """
         获取指定坐标处的栅格采样值
         :param x: X坐标
@@ -511,36 +515,34 @@ class Raster(IRaster):
         cog_path = self.get_cog_tif()
         if not cog_path:
             return None
-            
-        src_crs = "EPSG:4326"
 
         try:
-            with rasterio.open(cog_path) as src:
-                # 处理坐标系转换
-                target_x, target_y = x, y
-                
-                # 如果指定了源坐标系且与栅格坐标系不同，进行坐标转换
-                if src_crs is not None and src.crs is not None:
-                    if src_crs != src.crs.to_string():
-                        try:
-                            # 使用 rasterio.warp.transform 进行坐标转换
-                            target_x, target_y = transform(src_crs, src.crs, [x], [y])
-                            target_x, target_y = target_x[0], target_y[0]
-                            logger.debug(f'Transformed coordinates from {src_crs} ({x}, {y}) to {src.crs} ({target_x}, {target_y})')
-                        except Exception as transform_e:
-                            logger.error(f'Failed to transform coordinates from {src_crs} to {src.crs}: {transform_e}')
-                            return None
-                
-                # 将地理坐标转换为像素坐标
-                row, col = rasterio.transform.rowcol(src.transform, target_x, target_y)
-                
-                # 检查坐标是否在栅格范围内
-                if 0 <= row < src.height and 0 <= col < src.width:
-                    value = src.read(1)[row, col]
-                    return float(value) if value != src.nodata else None
-                else:
-                    logger.debug(f'Coordinates ({target_x}, {target_y}) are outside raster bounds')
-                    return None
+            # 处理坐标系转换
+            target_x, target_y = x, y
+            src = self.cog_src
+
+            # 如果指定了源坐标系且与栅格坐标系不同，进行坐标转换
+            if src_crs is not None and src.crs is not None:
+                if src_crs != src.crs.to_string():
+                    try:
+                        # 使用 rasterio.warp.transform 进行坐标转换
+                        target_x, target_y = transform(src_crs, src.crs, [x], [y])
+                        target_x, target_y = target_x[0], target_y[0]
+                        logger.debug(f'Transformed coordinates from {src_crs} ({x}, {y}) to {src.crs} ({target_x}, {target_y})')
+                    except Exception as transform_e:
+                        logger.error(f'Failed to transform coordinates from {src_crs} to {src.crs}: {transform_e}')
+                        return None
+            
+            # 将地理坐标转换为像素坐标
+            row, col = rasterio.transform.rowcol(src.transform, target_x, target_y)
+            
+            # 检查坐标是否在栅格范围内
+            if 0 <= row < src.height and 0 <= col < src.width:
+                value = self.cog_tif[row, col]
+                return float(value) if value != src.nodata else None
+            else:
+                logger.debug(f'Coordinates ({target_x}, {target_y}) are outside raster bounds')
+                return None
         except Exception as e:
             logger.error(f'Failed to get raster value at point ({x}, {y}): {e}')
             return None
@@ -916,71 +918,47 @@ class Raster(IRaster):
             return {}
             
         try:
-            with rasterio.open(cog_path) as src:
-                data = src.read(1)
-                
-                # 过滤 nodata 值
-                if src.nodata is not None:
-                    valid_data = data[data != src.nodata]
-                else:
-                    valid_data = data.flatten()
-                
-                if valid_data.size == 0:
-                    return {}
-                
-                return {
-                    'min': float(np.min(valid_data)),
-                    'max': float(np.max(valid_data)),
-                    'mean': float(np.mean(valid_data)),
-                    'std': float(np.std(valid_data)),
-                    'count': int(valid_data.size),
-                    'nodata_count': int(data.size - valid_data.size)
-                }
+            src = self.cog_src
+            # 过滤 nodata 值
+            if src.nodata is not None:
+                valid_data = self.cog_tif[self.cog_tif != src.nodata]
+            else:
+                valid_data = self.cog_tif.flatten()
+
+            if valid_data.size == 0:
+                return {}
+            
+            return {
+                'min': float(np.min(valid_data)),
+                'max': float(np.max(valid_data)),
+                'mean': float(np.mean(valid_data)),
+                'std': float(np.std(valid_data)),
+                'count': int(valid_data.size),
+                'nodata_count': int(self.cog_tif.size - valid_data.size)
+            }
         except Exception as e:
             logger.error(f'Failed to get raster statistics: {e}')
             return {}
 
     def delete_raster(self) -> Dict[str, Any]:
         """
-        删除栅格资源，包括原始TIF和COG TIF文件
+        删除栅格资源
         """
         success = True
-        messages = []
+        message = ''
         
         # 删除原始TIF文件
         if os.path.exists(self.path):
             try:
                 shutil.rmtree(self.path)
-                messages.append(f'Raster deleted successfully')
+                message = f'Raster deleted successfully'
             except Exception as e:
                 success = False
-                messages.append(f'Failed to delete original TIF: {e}')
-        
-        # 删除COG TIF文件
-        if self.cog_tif_path.exists():
-            try:
-                os.remove(self.cog_tif_path)
-                messages.append(f'Deleted COG TIF: {self.cog_tif_path}')
-            except Exception as e:
-                success = False
-                messages.append(f'Failed to delete COG TIF: {e}')
-        
-        # 删除整个目录（如果为空）
-        if self.path.exists():
-            try:
-                # 检查目录是否为空
-                if not any(self.path.iterdir()):
-                    self.path.rmdir()
-                    messages.append(f'Deleted empty directory: {self.path}')
-                else:
-                    messages.append(f'Directory not empty, kept: {self.path}')
-            except Exception as e:
-                success = False
-                messages.append(f'Failed to delete directory: {e}')
-        
+                message = f'Failed to delete original TIF: {e}'
+
         return {
             'success': success,
-            'message': '; '.join(messages) if success else f'Failed to delete raster: {"; ".join(messages)}',
+            'message': message,
         }
 
     def terminate(self) -> None:
