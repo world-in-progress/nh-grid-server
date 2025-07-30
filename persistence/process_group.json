@@ -41,27 +41,31 @@
             "type": "dict"
           },
           {
-            "name": "ne",
+            "name": "grid_node_key",
             "type": "str"
           },
           {
-            "name": "ns",
+            "name": "dem_node_key",
             "type": "str"
           },
           {
-            "name": "inp",
+            "name": "lum_node_key",
             "type": "str"
           },
           {
-            "name": "rainfall",
+            "name": "rainfall_node_key",
             "type": "str"
           },
           {
-            "name": "gate",
+            "name": "gate_node_key",
             "type": "str"
           },
           {
-            "name": "tide",
+            "name": "tide_node_key",
+            "type": "str"
+          },
+          {
+            "name": "inp_node_key",
             "type": "str"
           },
           {
@@ -88,7 +92,7 @@
             "type": "dict"
           },
           {
-            "name": "inp",
+            "name": "inp_node_key",
             "type": "str"
           },
           {

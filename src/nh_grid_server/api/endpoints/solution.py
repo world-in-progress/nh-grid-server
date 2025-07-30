@@ -11,7 +11,7 @@ from icrms.itreeger import ReuseAction, CRMDuration
 from ...schemas.solution import (
     CreateSolutionBody, ActionType, ActionTypeResponse, ActionTypeDetailResponse,
     AddHumanActionBody, DeleteHumanActionBody, AddFenceParams, TransferWaterParams, AddGateParams, 
-    UpdateHumanActionBody, ModelTypeResponse
+    UpdateHumanActionBody, ModelTypeResponse, GetSolutionResponse
 )
 
 import logging
@@ -359,14 +359,28 @@ def package_solution(node_key: str):
     """
     try:
         with BT.instance.connect(node_key, ISolution, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as solution:
-            package_path = solution.package()
+            result = solution.package()
         return BaseResponse(
-            success=True,
-            message="Solution packaged successfully at " + package_path
+            success=result.get('status', False),
+            message=result.get('message', 'Solution packaged successfully'),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to package solution: {str(e)}')
-    
+
+@router.get('/{node_key}', response_model=GetSolutionResponse)
+def get_solution(node_key: str):
+    """
+    Get a solution by node key.
+    """
+    try:
+        with BT.instance.connect(node_key, ISolution) as solution:
+            return GetSolutionResponse(
+                success=True,
+                data=solution.get_solution()
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get solution: {str(e)}')
+
 @router.delete('/{node_key}', response_model=BaseResponse)
 def delete_solution(node_key: str):
     """

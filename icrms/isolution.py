@@ -42,7 +42,7 @@ class ISolution:
         """
         ...
 
-    def package(self) -> str:
+    def package(self) -> dict:
         """
         打包解决方案
         :return: 打包结果
@@ -56,6 +56,13 @@ class ISolution:
         """
         ...
 
+    def get_solution(self) -> dict:
+        """
+        获取解决方案
+        :return: 解决方案字典
+        """
+        ...
+
     # From Model Server
     def clone_package(self) -> dict:
         """
@@ -64,9 +71,9 @@ class ISolution:
         """
         ...
 
-    def get_env(self) -> dict:
+    def get_model_env(self) -> dict:
         """
-        获取环境变量字典
-        :return: 环境变量字典
+        获取模型环境字典
+        :return: 模型环境字典
         """
         ...

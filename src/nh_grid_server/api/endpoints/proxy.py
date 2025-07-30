@@ -59,7 +59,7 @@ def discover(body: DiscoverBody=Body(..., description='discover')):
     )
 
 @router.post('/relay', response_model=RelayResponse)
-async def relay(node_key: str=Query(..., description='node_key'), body: bytes=Body(..., description='relay')):
+async def relay(node_key: str=Query(..., description='node_key!'), body: bytes=Body(..., description='relay')):
     """
     Description
     --

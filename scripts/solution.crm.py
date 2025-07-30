@@ -17,6 +17,7 @@ if __name__ == '__main__':
     parser.add_argument('--timeout', type=int, help='Timeout for the server to start (in seconds)')
     parser.add_argument('--server_address', type=str, required=True, help='TCP address for the server')
     parser.add_argument('--name', type=str, required=True, help='Solution name')
+    parser.add_argument('--model_type', type=str, required=True, help='Solution model type')
     parser.add_argument('--env', type=json.loads, required=True, help='Solution env')
     parser.add_argument('--action_types', type=json.loads, required=True, help='Solution action types')
 
@@ -24,7 +25,7 @@ if __name__ == '__main__':
     
     server_address = args.server_address
 
-    crm = Solution(args.name, args.env, args.action_types)
+    crm = Solution(args.name, args.model_type, args.env, args.action_types)
     server = cc.rpc.Server(server_address, crm)
     server.start()
     logger.info(f'Starting CRM server at {server_address}')
