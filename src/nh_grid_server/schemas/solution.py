@@ -29,8 +29,13 @@ class ActionTypeDetailResponse(BaseModel):
 
 class CreateSolutionBody(BaseModel):
     name: str
+    model_type: str
     env: dict
-    action_types: list[str]    
+    action_types: list[str]
+
+class GetSolutionResponse(BaseModel):
+    success: bool
+    data: dict
 
 class AddFenceParams(BaseModel):
     action_type: Literal["add_fence"] = Field(default="add_fence", description="参数类型标识")

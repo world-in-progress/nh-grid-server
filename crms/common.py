@@ -37,7 +37,7 @@ class Common(ICommon):
             file_name = os.path.basename(self.src_path)
             dst_path = os.path.join(target_path, file_name)
             shutil.copy(self.src_path, dst_path)
-            return {"status": True, "message": f"File copied to {dst_path}"}
+            return {"status": True, "message": file_name}
         except Exception as e:
             logger.error(f"Error copying file: {e}")
             return {"status": False, "message": str(e)}

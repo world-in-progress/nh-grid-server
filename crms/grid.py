@@ -770,7 +770,7 @@ class Grid(IGrid):
     def _create_grid_records(self, grid_cache: GridCache):
         batch_size = 10000
         batch_args = [
-            (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size))
+            (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size), batch_size * i)
             for i in range(0, len(grid_cache), batch_size)
         ]
         batch_func = partial(
@@ -801,7 +801,7 @@ class Grid(IGrid):
     def _create_edge_records(self):
         batch_size = 10000
         batch_args = [
-            self._slice_edge_info(i, batch_size)
+            (self._slice_edge_info(i, batch_size), batch_size * i)
             for i in range(0, len(self._edge_index_cache), batch_size)
         ]
         batch_func = partial(
@@ -1240,8 +1240,8 @@ def _batch_grid_records_worker(
     args: tuple[bytes, list[list[set[int]]]], bbox: list[float],
     meta_level_info: list[dict[str, int]], grid_info: list[list[float]]
 ) -> bytearray:
-    grid_data, grid_edges = args
-    
+    grid_data, grid_edges, offset = args
+
     records = bytearray()
     grid_count = len(grid_data) // 9 # each grid has 9 bytes (level: uint8 + global_id: uint64)
     for i in range(grid_count):
@@ -1253,7 +1253,7 @@ def _batch_grid_records_worker(
         edges = grid_edges[i]
         
         # Generate grid record
-        record =  _generate_grid_record(i, key, edges, bbox, meta_level_info, grid_info)
+        record =  _generate_grid_record(offset + i, key, edges, bbox, meta_level_info, grid_info)
         length_prefix = struct.pack('!I', len(record)) 
         
         records += length_prefix
@@ -1289,14 +1289,14 @@ def _generate_edge_record(index: int, edge_data: bytes, edge_grids: list[int | N
     )
 
 def _batch_edge_records_worker(args: tuple[bytes, list[list[int | None]]], bbox: list[float]) -> bytes:
-    edge_data, edge_grids = args
-    
+    edge_data, edge_grids, offset = args
+
     records = bytearray()
     edge_count = len(edge_data) // 25 # each edge has 25 bytes
     for i in range(edge_count):
         edge = edge_data[i]
         
-        record = _generate_edge_record(i, edge, edge_grids[i], bbox)
+        record = _generate_edge_record(offset + i, edge, edge_grids[i], bbox)
         length_prefix = struct.pack('!I', len(record))
         
         records += length_prefix
