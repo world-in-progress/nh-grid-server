@@ -373,7 +373,7 @@ def get_solution(node_key: str):
     Get a solution by node key.
     """
     try:
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(node_key, ISolution, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as solution:
             return GetSolutionResponse(
                 success=True,
                 data=solution.get_solution()
