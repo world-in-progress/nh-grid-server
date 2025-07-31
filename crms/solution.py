@@ -122,7 +122,7 @@ class Solution(ISolution):
                 for ne in ne_list:
                     if isinstance(ne, (list, tuple)):
                         # 将列表元素用空格或逗号分隔
-                        f.write(' '.join(map(str, ne)) + '\n')
+                        f.write(','.join(map(str, ne)) + '\n')
                     else:
                         f.write(str(ne) + '\n')
 
@@ -149,7 +149,7 @@ class Solution(ISolution):
                 for ns in ns_list:
                     if isinstance(ns, (list, tuple)):
                         # 将列表元素用空格或逗号分隔
-                        f.write(' '.join(map(str, ns)) + '\n')
+                        f.write(','.join(map(str, ns)) + '\n')
                     else:
                         f.write(str(ns) + '\n')
 

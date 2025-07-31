@@ -770,7 +770,7 @@ class Grid(IGrid):
     def _create_grid_records(self, grid_cache: GridCache):
         batch_size = 10000
         batch_args = [
-            (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size), batch_size * i)
+            (grid_cache.slice_grids(i, batch_size), grid_cache.slice_edges(i, batch_size), i)
             for i in range(0, len(grid_cache), batch_size)
         ]
         batch_func = partial(
@@ -801,7 +801,7 @@ class Grid(IGrid):
     def _create_edge_records(self):
         batch_size = 10000
         batch_args = [
-            (self._slice_edge_info(i, batch_size), batch_size * i)
+            (*self._slice_edge_info(i, batch_size), i)
             for i in range(0, len(self._edge_index_cache), batch_size)
         ]
         batch_func = partial(
@@ -913,8 +913,6 @@ class Grid(IGrid):
                     
                     e = HydroElement(data)
                     grid_list.append(e)
-                    # Process the element as needed
-                    print(f'Parsed grid record: {e}')
 
                 return grid_list
 
@@ -932,7 +930,6 @@ class Grid(IGrid):
 
                     s = HydroSide(data)
                     edge_list.append(s)
-                    print(f'Parsed edge record: {s}')
                 return edge_list
 
 # Helpers ##################################################
@@ -1288,11 +1285,11 @@ def _generate_edge_record(index: int, edge_data: bytes, edge_grids: list[int | N
         edge_grids[1] + 1 if edge_grids[1] is not None else 0  # grid_index_b (1-based)
     )
 
-def _batch_edge_records_worker(args: tuple[bytes, list[list[int | None]]], bbox: list[float]) -> bytes:
+def _batch_edge_records_worker(args: tuple[list[bytes], list[list[int | None]]], bbox: list[float]) -> bytes:
     edge_data, edge_grids, offset = args
 
     records = bytearray()
-    edge_count = len(edge_data) // 25 # each edge has 25 bytes
+    edge_count = len(edge_data)
     for i in range(edge_count):
         edge = edge_data[i]
         
