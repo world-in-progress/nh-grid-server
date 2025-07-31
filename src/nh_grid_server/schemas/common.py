@@ -7,3 +7,8 @@ class CreateCommonBody(BaseModel):
 
 class CopyToBody(BaseModel):
     target_path: str
+
+class GetDataResponse(BaseModel):
+    success: bool
+    message: str
+    data: dict
