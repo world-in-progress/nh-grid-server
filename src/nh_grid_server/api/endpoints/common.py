@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT
 from crms.treeger import ReuseAction, CRMDuration
-from ...schemas.common import CreateCommonBody, CopyToBody
+from ...schemas.common import CreateCommonBody, CopyToBody, GetDataResponse
 
 import logging
 logger = logging.getLogger(__name__)
@@ -50,4 +50,26 @@ def copy_to(node_key: str, body: CopyToBody=Body(..., description='copy common')
         return BaseResponse(
             success=False,
             message=f'Failed to copy common: {str(e)}'
+        )
+    
+@router.get('/get_data/{node_key}', response_model=GetDataResponse)
+def get_data(node_key: str):
+    """
+    Description
+    --
+    Get data of a common.
+    """
+    try:
+        with BT.instance.connect(node_key, ICommon, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as common:
+            data = common.get_data()
+        return GetDataResponse(
+            success=True,
+            message="Data retrieved successfully.",
+            data=data
+        )
+    except Exception as e:
+        return GetDataResponse(
+            success=False,
+            message=f'Failed to get data: {str(e)}',
+            data={}
         )

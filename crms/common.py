@@ -41,3 +41,29 @@ class Common(ICommon):
         except Exception as e:
             logger.error(f"Error copying file: {e}")
             return {"status": False, "message": str(e)}
+        
+    def get_data(self) -> dict:
+        """Method to get the data of the Common resource
+
+        Returns:
+            dict: data of the Common resource
+        """
+
+        data = {}
+        if os.path.exists(self.src_path):
+            with open(self.src_path, 'r', encoding='utf-8') as file:
+                if self.type in ["rainfall", "tide"]:
+                    # 对于rainfall类型，按行读取并存入列表
+                    data = file.readlines()
+                    # 去除每行末尾的换行符
+                    data = [line.rstrip('\n') for line in data]
+                else:
+                    data = file.read()
+        else:
+            logger.warning(f"Source path {self.src_path} does not exist.")
+
+        return {
+            "name": self.name,
+            "type": self.type,
+            "data": data
+        }

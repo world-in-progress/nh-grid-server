@@ -10,3 +10,6 @@ class ICommon:
     """
     def copy_to(self, target_path: str) -> dict:
         ...
+
+    def get_data(self) -> dict:
+        ...
