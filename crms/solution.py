@@ -9,7 +9,9 @@ from pathlib import Path
 from crms.grid import Grid
 from crms.common import Common
 from crms.raster import Raster
+import multiprocessing
 from crms.treeger import Treeger
+from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
 
 from icrms.isolution import ISolution
 from src.nh_grid_server.core.config import settings
@@ -28,11 +30,13 @@ class Solution(ISolution):
         
         self.path = Path(f'{settings.SOLUTION_DIR}{self.name}')
         self.env_path = self.path / 'env'
+        self.render_path = self.path / 'render'
         self.human_actions_path = self.path / 'actions' / 'human_actions'
         self.model_env_path = self.path / 'model_env.json'
 
         self.path.mkdir(parents=True, exist_ok=True)
         self.env_path.mkdir(parents=True, exist_ok=True)
+        self.render_path.mkdir(parents=True, exist_ok=True)
         self.human_actions_path.mkdir(parents=True, exist_ok=True)
 
     def get_action_types(self) -> list[str]:
@@ -193,7 +197,23 @@ class Solution(ISolution):
             tide_filename = tide_crm.copy_to(self.env_path).get('message', 'tide.txt')
             inp_filename = inp_crm.copy_to(self.env_path).get('message', 'inp.txt')
 
-            # 3. create package
+            # 3. copy render files
+            render_path = Path(os.path.join(settings.PERSISTENCE_DIR, 'render'))
+            shutil.copytree(render_path, self.render_path, dirs_exist_ok=True)
+
+            # 4. generate render resource
+            process = multiprocessing.Process(
+                target=process_dem_to_image_from_datasets,
+                kwargs={
+                    'input_dem_path': dem_crm.get_cog_tif(),
+                    'output_path': self.render_path / 'static' / 'dem/'
+                }
+            )
+
+            process.start()
+            process.join()
+
+            # 5. create package
             package_path = self.path / f'{self.name}_package.zip'
             with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as package_zip:
                 # 添加solution目录中的所有文件和文件夹
