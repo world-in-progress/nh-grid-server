@@ -1,7 +1,6 @@
 import json
 from typing import Union
 from pathlib import Path
-from fastapi import APIRouter
 from icrms.isolution import ISolution
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT

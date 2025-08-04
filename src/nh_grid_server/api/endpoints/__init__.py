@@ -9,6 +9,7 @@ from . import grids
 from . import solution
 from . import raster
 from . import common
+from . import simulation
 
 router = APIRouter(prefix='/api', tags=['api'])
 
@@ -22,3 +23,4 @@ router.include_router(proxy.router)
 router.include_router(solution.router)
 router.include_router(raster.router)
 router.include_router(common.router)
+router.include_router(simulation.router)

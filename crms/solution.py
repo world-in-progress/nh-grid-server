@@ -5,11 +5,11 @@ import json
 import logging
 import zipfile
 import c_two as cc
+import multiprocessing
 from pathlib import Path
 from crms.grid import Grid
 from crms.common import Common
 from crms.raster import Raster
-import multiprocessing
 from crms.treeger import Treeger
 from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
 
@@ -209,7 +209,6 @@ class Solution(ISolution):
                     'output_path': self.render_path / 'static' / 'dem/'
                 }
             )
-
             process.start()
             process.join()
 
