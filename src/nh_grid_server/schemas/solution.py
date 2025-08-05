@@ -19,6 +19,10 @@ class ActionTypeResponse(BaseModel):
     success: bool
     data: list[dict]
 
+class TerrainDataResponse(BaseModel):
+    success: bool
+    data: dict
+
 class ModelTypeResponse(BaseModel):
     success: bool
     data: list[dict]
@@ -45,14 +49,15 @@ class AddFenceParams(BaseModel):
 
 class TransferWaterParams(BaseModel):
     action_type: Literal["transfer_water"] = Field(default="transfer_water", description="参数类型标识")
-    from_grid: int
-    to_grid: int
+    from_grid: list[float]
+    to_grid: list[float]
     q: float  # 通量
 
 class AddGateParams(BaseModel):
     action_type: Literal["add_gate"] = Field(default="add_gate", description="参数类型标识")
-    ud_stream: int
-    gate_height: int
+    up_stream: list[float]
+    down_stream: list[float]
+    gate_height: float
     feature: dict[str, Any]
 
 class AddHumanActionBody(BaseModel):

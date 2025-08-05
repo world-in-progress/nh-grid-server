@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     FEATURE_DIR: str = 'resource/vectors/'
 
+    PERSISTENCE_DIR: str = 'persistence/'
+
     SERVER_PORT: int = 8000
 
     class Config:

@@ -238,10 +238,12 @@ class HydroSide:
         else: # horizontal side
             top_grid_index = self.grid_index_a if self.grid_index_a is not None else 0
             bottom_grid_index = self.grid_index_b if self.grid_index_b is not None else 0
+        
+        direction = 1 if self.direction == 1 else 2
             
         return [
             self.index,             # side index
-            self.direction,         # direction (0 for vertical, 1 for horizontal)
+            direction,              # direction (1 for horizontal, 2 for vertical)
             left_grid_index,        # left grid index (1-based)
             right_grid_index,       # right grid index (1-based)
             bottom_grid_index,      # bottom grid index (1-based)

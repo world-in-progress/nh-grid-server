@@ -77,3 +77,10 @@ class ISolution:
         :return: 模型环境字典
         """
         ...
+
+    def get_terrain_data(self) -> dict:
+        """
+        获取地形数据字典
+        :return: 地形数据字典
+        """
+        ...

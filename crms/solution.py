@@ -1,15 +1,17 @@
 import os
-import shutil
 import time
 import json
+import shutil
 import logging
 import zipfile
 import c_two as cc
+import multiprocessing
 from pathlib import Path
 from crms.grid import Grid
-from crms.common import Common
 from crms.raster import Raster
+from crms.common import Common
 from crms.treeger import Treeger
+from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
 
 from icrms.isolution import ISolution
 from src.nh_grid_server.core.config import settings
@@ -28,11 +30,13 @@ class Solution(ISolution):
         
         self.path = Path(f'{settings.SOLUTION_DIR}{self.name}')
         self.env_path = self.path / 'env'
+        self.render_path = self.path / 'render'
         self.human_actions_path = self.path / 'actions' / 'human_actions'
         self.model_env_path = self.path / 'model_env.json'
 
         self.path.mkdir(parents=True, exist_ok=True)
         self.env_path.mkdir(parents=True, exist_ok=True)
+        self.render_path.mkdir(parents=True, exist_ok=True)
         self.human_actions_path.mkdir(parents=True, exist_ok=True)
 
     def get_action_types(self) -> list[str]:
@@ -193,7 +197,22 @@ class Solution(ISolution):
             tide_filename = tide_crm.copy_to(self.env_path).get('message', 'tide.txt')
             inp_filename = inp_crm.copy_to(self.env_path).get('message', 'inp.txt')
 
-            # 3. create package
+            # 3. copy render files
+            render_path = Path(os.path.join(settings.PERSISTENCE_DIR, 'render'))
+            shutil.copytree(render_path, self.render_path, dirs_exist_ok=True)
+
+            # 4. generate render resource
+            process = multiprocessing.Process(
+                target=process_dem_to_image_from_datasets,
+                kwargs={
+                    'input_dem_path': dem_crm.get_cog_tif(),
+                    'output_path': self.render_path / 'static' / 'dem/'
+                }
+            )
+            process.start()
+            process.join()
+
+            # 5. create package
             package_path = self.path / f'{self.name}_package.zip'
             with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as package_zip:
                 # 添加solution目录中的所有文件和文件夹
@@ -255,6 +274,30 @@ class Solution(ISolution):
             "action_types": self.action_types
         }
         return solution_data
+
+    def get_terrain_data(self) -> dict:
+        """
+        获取地形数据字典
+        :return: 地形数据字典
+        """
+        try:
+            data = {}
+            data_path = self.render_path / 'static' / 'dem' / 'data.json'
+            if data_path.exists():
+                with open(data_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                logger.warning(f'Terrain data file {data_path} does not exist')
+            terrain_data = {
+                "terrainMap": data,
+                "terrainMapSize": [data.get('dimensions').get('width', 0), data.get('dimensions').get('height', 0)],
+                "terrainHeightMin": data.get('bands')[0].get('min', 0),
+                "terrainHeightMax": data.get('bands')[0].get('max', 0),
+            }
+        except Exception as e:
+            logger.error(f'Failed to get terrain data: {str(e)}')
+        
+        return terrain_data
 
     # From Model Server
     def clone_package(self) -> dict:
