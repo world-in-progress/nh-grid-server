@@ -1,15 +1,15 @@
 import os
-import shutil
 import time
 import json
+import shutil
 import logging
 import zipfile
 import c_two as cc
 import multiprocessing
 from pathlib import Path
 from crms.grid import Grid
-from crms.common import Common
 from crms.raster import Raster
+from crms.common import Common
 from crms.treeger import Treeger
 from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
 
@@ -274,6 +274,30 @@ class Solution(ISolution):
             "action_types": self.action_types
         }
         return solution_data
+
+    def get_terrain_data(self) -> dict:
+        """
+        获取地形数据字典
+        :return: 地形数据字典
+        """
+        try:
+            data = {}
+            data_path = self.render_path / 'static' / 'dem' / 'data.json'
+            if data_path.exists():
+                with open(data_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                logger.warning(f'Terrain data file {data_path} does not exist')
+            terrain_data = {
+                "terrainMap": data,
+                "terrainMapSize": [data.get('dimensions').get('width', 0), data.get('dimensions').get('height', 0)],
+                "terrainHeightMin": data.get('bands')[0].get('min', 0),
+                "terrainHeightMax": data.get('bands')[0].get('max', 0),
+            }
+        except Exception as e:
+            logger.error(f'Failed to get terrain data: {str(e)}')
+        
+        return terrain_data
 
     # From Model Server
     def clone_package(self) -> dict:

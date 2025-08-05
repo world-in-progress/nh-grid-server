@@ -1,0 +1,9 @@
+{
+    "terrainMap": "./floods/Resources/DEM1.png",
+    "terrainMapSize": [
+        5031,
+        2753
+    ],
+    "terrainHeightMin": -11.35142,
+    "terrainHeightMax": 847.2994
+}

@@ -45,8 +45,8 @@ def get_dataset_bounds_in_4326_dict(dataset):
     transform = osr.CoordinateTransformation(src_srs, tgt_srs)
 
     # 坐标转换
-    ul_lon, ul_lat, _ = transform.TransformPoint(ul_x, ul_y)
-    lr_lon, lr_lat, _ = transform.TransformPoint(lr_x, lr_y)
+    ul_lat, ul_lon, _ = transform.TransformPoint(ul_x, ul_y)
+    lr_lat, lr_lon, _ = transform.TransformPoint(lr_x, lr_y)
 
     # 返回结果
     return {

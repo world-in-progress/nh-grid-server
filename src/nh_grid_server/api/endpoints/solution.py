@@ -10,7 +10,7 @@ from icrms.itreeger import ReuseAction, CRMDuration
 from ...schemas.solution import (
     CreateSolutionBody, ActionType, ActionTypeResponse, ActionTypeDetailResponse,
     AddHumanActionBody, DeleteHumanActionBody, AddFenceParams, TransferWaterParams, AddGateParams, 
-    UpdateHumanActionBody, ModelTypeResponse, GetSolutionResponse
+    UpdateHumanActionBody, ModelTypeResponse, GetSolutionResponse, TerrainDataResponse
 )
 
 import logging
@@ -395,3 +395,18 @@ def delete_solution(node_key: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to delete solution: {str(e)}')
+    
+@router.get('/get_terrain_data/{node_key}', response_model=TerrainDataResponse)
+def get_terrain_data(node_key: str):
+    """
+    Get terrain data.
+    """
+    try:
+        with BT.instance.connect(node_key, ISolution) as solution:
+            terrain_data = solution.get_terrain_data()
+        return TerrainDataResponse(
+            success=True,
+            data=terrain_data
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Failed to get terrain data: {str(e)}')
