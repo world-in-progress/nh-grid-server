@@ -84,3 +84,4 @@ class ISolution:
         :return: 地形数据字典
         """
         ...
+    

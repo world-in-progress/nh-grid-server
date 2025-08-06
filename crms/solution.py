@@ -283,13 +283,15 @@ class Solution(ISolution):
         try:
             data = {}
             data_path = self.render_path / 'static' / 'dem' / 'data.json'
+            dem_url = f"/solutions/{self.name}/render/static/dem/dem.png"
+            
             if data_path.exists():
                 with open(data_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
             else:
                 logger.warning(f'Terrain data file {data_path} does not exist')
             terrain_data = {
-                "terrainMap": data,
+                "terrainMap": dem_url,
                 "terrainMapSize": [data.get('dimensions').get('width', 0), data.get('dimensions').get('height', 0)],
                 "terrainHeightMin": data.get('bands')[0].get('min', 0),
                 "terrainHeightMax": data.get('bands')[0].get('max', 0),

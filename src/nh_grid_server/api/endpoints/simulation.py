@@ -1,10 +1,14 @@
 import base64
 import c_two as cc
+import json
+import os
 from pathlib import Path
 from ...schemas.base import BaseResponse
 from icrms.isimulation import ISimulation
 from fastapi import APIRouter, HTTPException, Body
-from src.nh_grid_server.schemas.simulation import GetStepResultRequest
+from src.nh_grid_server.schemas.simulation import GetStepResultRequest, WaterDataResponse
+from ...core.bootstrapping_treeger import BT
+from ...core.config import settings
 
 import logging
 logger = logging.getLogger(__name__)
@@ -94,3 +98,75 @@ def get_step_result(body: GetStepResultRequest=Body(..., description='get step r
     except Exception as e:
         logger.error(f"Failed to get step result: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Failed to get step result: {str(e)}')
+
+@router.get('/get_water_data/{simulation_name}/{step}', response_model=WaterDataResponse)
+def get_water_data(simulation_name: str, step: int):
+    """
+    Get water simulation data for a specific step.
+    """
+    try:     
+        simulation_dir = Path(settings.ROOT_DIR) / "resource" / "simulations" / simulation_name
+        
+        if not simulation_dir.exists():
+            raise HTTPException(status_code=404, detail=f'Simulation directory not found: {simulation_name}')
+        
+        # 构建特定步骤的目录路径
+        step_dir = simulation_dir / str(step)
+        
+        if not step_dir.exists():
+            raise HTTPException(status_code=404, detail=f'Step {step} not found for simulation: {simulation_name}')
+        
+        # 读取当前步骤的数据文件
+        data_file = step_dir / "data.json"
+        
+        if not data_file.exists():
+            raise HTTPException(status_code=404, detail=f'Data file not found for step {step}')
+        
+        with open(data_file, 'r', encoding='utf-8') as f:
+            step_data = json.load(f)
+        
+        # 构建当前步骤的 HUV 图片 URL
+        huv_url = f"/simulations/{simulation_name}/{step}/huv.png"
+        
+        # 提取统计数据
+        huv_stats = step_data.get('huv_stats', {})
+        
+        # 深度数据
+        depth_stats = huv_stats.get('depth', {})
+        water_height_min = depth_stats.get('min_value', 0.0)
+        water_height_max = depth_stats.get('max_value', 0.0)
+        
+        # U 速度数据
+        u_stats = huv_stats.get('u', {})
+        velocity_u_min = u_stats.get('min_value', 0.0)
+        velocity_u_max = u_stats.get('max_value', 0.0)
+        
+        # V 速度数据
+        v_stats = huv_stats.get('v', {})
+        velocity_v_min = v_stats.get('min_value', 0.0)
+        velocity_v_max = v_stats.get('max_value', 0.0)
+        
+        # 获取地图尺寸
+        dimensions = step_data.get('dimensions', {})
+        water_map_size = [dimensions.get('width', 0), dimensions.get('height', 0)]
+        
+        # 构建返回数据
+        water_data = {
+            "durationTime": 5000,
+            "waterHuvMaps": huv_url,
+            "waterHuvMapsSize": water_map_size,
+            "waterHeightMin": water_height_min,
+            "waterHeightMax": water_height_max,
+            "velocityUMin": velocity_u_min,
+            "velocityUMax": velocity_u_max,
+            "velocityVMin": velocity_v_min,
+            "velocityVMax": velocity_v_max,
+        }
+            
+        return WaterDataResponse(
+            success=True,
+            data=water_data
+        )
+    except Exception as e:
+        logger.error(f'Failed to get water data: {str(e)}')
+        raise HTTPException(status_code=500, detail=f'Failed to get water data: {str(e)}')

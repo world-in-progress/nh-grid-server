@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+from nh_grid_server.schemas import simulation
+
 from .api import api_router
 from .core.config import settings
 from .core.mcp_client import MCPClient
@@ -75,6 +77,22 @@ def create_app() -> FastAPI:
     # Add API routers
     app.include_router(api_router)
         
+    solution_static_path = Path(settings.ROOT_DIR) / "resource" / "solutions"
+    if solution_static_path.exists():
+        app.mount(
+            "/solutions",
+            StaticFiles(directory=solution_static_path),
+            name="solutions_static"
+        )
+    
+    simulation_static_path = Path(settings.ROOT_DIR) / "resource" / "simulations"
+    if simulation_static_path.exists():
+        app.mount(
+            "/simulations",
+            StaticFiles(directory=simulation_static_path),
+            name="simulations_static"
+        )
+    
     return app
 
 app = create_app()
