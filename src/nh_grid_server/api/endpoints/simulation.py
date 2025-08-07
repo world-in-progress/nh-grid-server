@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from ...schemas.base import BaseResponse
 from icrms.isimulation import ISimulation
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Request
 from src.nh_grid_server.schemas.simulation import GetStepResultRequest, WaterDataResponse
 from ...core.bootstrapping_treeger import BT
 from ...core.config import settings
@@ -100,7 +100,7 @@ def get_step_result(body: GetStepResultRequest=Body(..., description='get step r
         raise HTTPException(status_code=500, detail=f'Failed to get step result: {str(e)}')
 
 @router.get('/get_water_data/{simulation_name}/{step}', response_model=WaterDataResponse)
-def get_water_data(simulation_name: str, step: int):
+def get_water_data(simulation_name: str, step: int, request: Request):
     """
     Get water simulation data for a specific step.
     """
@@ -125,11 +125,24 @@ def get_water_data(simulation_name: str, step: int):
         with open(data_file, 'r', encoding='utf-8') as f:
             step_data = json.load(f)
         
-        # 构建当前步骤的 HUV 图片 URL
-        huv_url = f"/simulations/{simulation_name}/{step}/huv.png"
+        # 构建当前步骤的 HUV 图片完整 URL
+        base_url = f"{request.url.scheme}://{request.url.netloc}"
+        huv_url = f"{base_url}/simulations/{simulation_name}/{step}/huv.png"
         
         # 提取统计数据
         huv_stats = step_data.get('huv_stats', {})
+        
+        # 提取经纬度边界并计算中心点
+        bounds_4326 = step_data.get('bounds_4326', {})
+        upper_left = bounds_4326.get('upper_left', {})
+        lower_right = bounds_4326.get('lower_right', {})
+        
+        upper_left_lon = upper_left.get('lon', 0.0)
+        upper_left_lat = upper_left.get('lat', 0.0)
+        lower_right_lon = lower_right.get('lon', 0.0)
+        lower_right_lat = lower_right.get('lat', 0.0)
+        upper_left = [upper_left_lon, upper_left_lat]
+        lower_right = [lower_right_lon, lower_right_lat]
         
         # 深度数据
         depth_stats = huv_stats.get('depth', {})
@@ -152,9 +165,11 @@ def get_water_data(simulation_name: str, step: int):
         
         # 构建返回数据
         water_data = {
-            "durationTime": 5000,
+            "durationTime": 1000,
             "waterHuvMaps": huv_url,
             "waterHuvMapsSize": water_map_size,
+            "upper_left": upper_left,
+            "lower_right": lower_right,
             "waterHeightMin": water_height_min,
             "waterHeightMax": water_height_max,
             "velocityUMin": velocity_u_min,

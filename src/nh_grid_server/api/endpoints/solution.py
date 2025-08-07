@@ -4,7 +4,7 @@ from pathlib import Path
 from icrms.isolution import ISolution
 from ...schemas.base import BaseResponse
 from ...core.bootstrapping_treeger import BT
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Request
 from icrms.itreeger import ReuseAction, CRMDuration
 
 from ...schemas.solution import (
@@ -397,13 +397,16 @@ def delete_solution(node_key: str):
         raise HTTPException(status_code=500, detail=f'Failed to delete solution: {str(e)}')
     
 @router.get('/get_terrain_data/{node_key}', response_model=TerrainDataResponse)
-def get_terrain_data(node_key: str):
+def get_terrain_data(node_key: str, request: Request):
     """
     Get terrain data.
     """
     try:
+        # 在API层构建base_url
+        base_url = f"{request.url.scheme}://{request.url.netloc}"
+        
         with BT.instance.connect(node_key, ISolution) as solution:
-            terrain_data = solution.get_terrain_data()
+            terrain_data = solution.get_terrain_data(base_url)
         return TerrainDataResponse(
             success=True,
             data=terrain_data

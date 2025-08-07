@@ -12,6 +12,7 @@ from crms.raster import Raster
 from crms.common import Common
 from crms.treeger import Treeger
 from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
+from fastapi import Request  # 添加这一行
 
 from icrms.isolution import ISolution
 from src.nh_grid_server.core.config import settings
@@ -275,31 +276,60 @@ class Solution(ISolution):
         }
         return solution_data
 
-    def get_terrain_data(self) -> dict:
+    def get_terrain_data(self, base_url: str = None) -> dict:
         """
         获取地形数据字典
+        :param base_url: 基础URL，用于构建完整的地形图URL
         :return: 地形数据字典
         """
         try:
             data = {}
             data_path = self.render_path / 'static' / 'dem' / 'data.json'
-            dem_url = f"/solutions/{self.name}/render/static/dem/dem.png"
+            
+            # 构建完整的URL
+            if base_url:
+                dem_url = f"{base_url}/solutions/{self.name}/render/static/dem/dem.png"
+            else:
+                # 如果没有base_url，使用相对路径作为后备
+                dem_url = f"/solutions/{self.name}/render/static/dem/dem.png"
             
             if data_path.exists():
                 with open(data_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
             else:
                 logger.warning(f'Terrain data file {data_path} does not exist')
+            # 安全地获取 dimensions 数据
+            dimensions = data.get('dimensions', {})
+            if dimensions is None:
+                dimensions = {}
+            
+            # 安全地获取 bands 数据
+            bands = data.get('bands', [])
+            if bands is None or len(bands) == 0:
+                bands = [{'min': 0, 'max': 0}]
+            
             terrain_data = {
                 "terrainMap": dem_url,
-                "terrainMapSize": [data.get('dimensions').get('width', 0), data.get('dimensions').get('height', 0)],
-                "terrainHeightMin": data.get('bands')[0].get('min', 0),
-                "terrainHeightMax": data.get('bands')[0].get('max', 0),
+                "terrainMapSize": [dimensions.get('width', 0), dimensions.get('height', 0)],
+                "terrainHeightMin": bands[0].get('min', 0),
+                "terrainHeightMax": bands[0].get('max', 0),
             }
+            return terrain_data
+            
         except Exception as e:
             logger.error(f'Failed to get terrain data: {str(e)}')
-        
-        return terrain_data
+            # 返回默认的地形数据结构
+            if base_url:
+                dem_url = f"{base_url}/solutions/{self.name}/render/static/dem/dem.png"
+            else:
+                dem_url = f"/solutions/{self.name}/render/static/dem/dem.png"
+            
+            return {
+                "terrainMap": dem_url,
+                "terrainMapSize": [0, 0],
+                "terrainHeightMin": 0,
+                "terrainHeightMax": 0,
+            }
 
     # From Model Server
     def clone_package(self) -> dict:

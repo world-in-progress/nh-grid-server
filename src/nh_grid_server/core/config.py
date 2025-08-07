@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
 
+
 APP_CONTEXT: dict[str, str] = {
     'current_patch': None
 }
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     # Server configuration
     DEBUG: bool = True
     APP_NAME: str = 'NH Grid Server'
+    ROOT_DIR: Path = ROOT_DIR
     TEMPLATES_DIR: str = str(ROOT_DIR / 'templates/')
     
     # Memory temp directory

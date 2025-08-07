@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from nh_grid_server.schemas import simulation
+from .schemas import simulation
 
 from .api import api_router
 from .core.config import settings
@@ -99,4 +99,4 @@ app = create_app()
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8000)
+    uvicorn.run(app, host='0.0.0.0', port=8001)

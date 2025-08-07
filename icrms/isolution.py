@@ -1,4 +1,5 @@
 import c_two as cc
+from fastapi import Request
 
 @cc.icrm
 class ISolution:
@@ -78,9 +79,10 @@ class ISolution:
         """
         ...
 
-    def get_terrain_data(self) -> dict:
+    def get_terrain_data(self, base_url: str = None) -> dict:
         """
         获取地形数据字典
+        :param base_url: 基础URL，用于构建完整的地形图URL
         :return: 地形数据字典
         """
         ...
