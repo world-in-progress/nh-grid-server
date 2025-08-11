@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/solution', tags=['solution / operation'])
 
 def convert_type_to_frontend(type_annotation) -> str:
-    """将Python类型转换为前端可识别的类型"""
+    """Convert Python types to frontend-recognizable types"""
     type_str = str(type_annotation)
     
-    # 基础类型映射
+    # Basic type mapping
     type_mapping = {
         'int': 'number',
         'float': 'number', 
@@ -32,7 +32,7 @@ def convert_type_to_frontend(type_annotation) -> str:
         'list': 'array'
     }
     
-    # 处理泛型类型
+    # Handle generic types
     if 'dict[str, ' in type_str:
         return 'object'
     elif 'list[' in type_str:
@@ -44,20 +44,20 @@ def convert_type_to_frontend(type_annotation) -> str:
     elif 'Union[' in type_str:
         return 'union'
     elif hasattr(type_annotation, '__members__'):
-        # 枚举类型
+        # Enum type
         return 'enum'
     else:
-        # 对于其他复杂类型，提取类名
+        # For other complex types, extract class name
         if hasattr(type_annotation, '__name__'):
             return type_annotation.__name__
         else:
-            # 提取最后一个点后的内容作为类型名
+            # Extract content after the last dot as type name
             parts = type_str.split('.')
             if parts:
                 clean_type = parts[-1].replace('>', '').replace("'", '')
                 return clean_type
     
-    return 'unknown'    
+    return 'unknown'
 
 @router.get('/model_type_list', response_model=ModelTypeResponse)
 def get_model_type_list():
@@ -65,22 +65,22 @@ def get_model_type_list():
     Get all model types from process_group.json.
     """
     try:
-        # 获取项目根目录下的 persistence/process_group.json 文件路径
+        # Get the path to persistence/process_group.json file in project root directory
         current_file = Path(__file__)
-        project_root = current_file.parent.parent.parent.parent.parent  # 回到项目根目录
+        project_root = current_file.parent.parent.parent.parent.parent  # Go back to project root directory
         process_group_file = project_root / "persistence" / "process_group.json"
         
         if not process_group_file.exists():
             logger.error(f"process_group.json not found at: {process_group_file}")
             return ModelTypeResponse(success=False, data=[])
         
-        # 读取并解析 JSON 文件
+        # Read and parse JSON file
         with open(process_group_file, 'r', encoding='utf-8') as f:
             process_groups = json.load(f)
         
         model_types = []
         for group in process_groups:
-            # 从配置中获取需要跳过的参数，如果没有配置则默认为空集合
+            # Get parameters to skip from configuration, default to empty set if not configured
             skip_params = set(group.get("skip_parameters", []))
             
             group_data = {
@@ -89,14 +89,14 @@ def get_model_type_list():
                 "processes": []
             }
             
-            # 处理每个进程的参数信息
+            # Process parameter information for each process
             for process in group.get("processes", []):
                 process_data = {
                     "name": process.get("name", ""),
                     "parameters": []
                 }
                 
-                # 过滤参数，跳过配置中指定的参数名
+                # Filter parameters, skip parameter names specified in configuration
                 for param in process.get("parameters", []):
                     param_name = param.get("name", "")
                     if param_name not in skip_params:
@@ -402,10 +402,10 @@ def get_terrain_data(node_key: str, request: Request):
     Get terrain data.
     """
     try:
-        # 在API层构建base_url
+        # Build base_url at API layer
         base_url = f"{request.url.scheme}://{request.url.netloc}"
         
-        with BT.instance.connect(node_key, ISolution) as solution:
+        with BT.instance.connect(node_key, ISolution, reuse=ReuseAction.REPLACE) as solution:
             terrain_data = solution.get_terrain_data(base_url)
         return TerrainDataResponse(
             success=True,

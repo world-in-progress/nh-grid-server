@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     PERSISTENCE_DIR: str = 'persistence/'
 
-    SERVER_PORT: int = 8000
+    SERVER_PORT: int = 8001
 
     class Config:
         env_file = '.env'

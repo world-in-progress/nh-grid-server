@@ -5,9 +5,9 @@ import os
 import time
 from .dataset2huv import process_terrain_data, create_dem_rgba_image, save_image
 
-def get_dataset_bounds_in_4326_dict(dataset):
+def get_dataset_bounds(dataset):
     """
-    获取数据集左上角和右下角在 EPSG:4326 坐标系下的经纬度坐标
+    获取数据集四个角点在 EPSG:4326 坐标系下的经纬度坐标
 
     参数:
         dataset: 一个 GDAL 数据集对象
@@ -16,7 +16,9 @@ def get_dataset_bounds_in_4326_dict(dataset):
         字典格式：
         {
             "upper_left": {"lon": ..., "lat": ...},
-            "lower_right": {"lon": ..., "lat": ...}
+            "lower_left": {"lon": ..., "lat": ...},
+            "lower_right": {"lon": ..., "lat": ...},
+            "upper_right": {"lon": ..., "lat": ...}
         }
     """
     # 获取地理变换参数
@@ -28,30 +30,18 @@ def get_dataset_bounds_in_4326_dict(dataset):
     width = dataset.RasterXSize
     height = dataset.RasterYSize
 
-    # 左上角 (ul) 和右下角 (lr) 的原始坐标
-    ul_x = gt[0]
-    ul_y = gt[3]
-    lr_x = gt[0] + width * gt[1] + height * gt[2]
-    lr_y = gt[3] + width * gt[4] + height * gt[5]
-
-    # 创建坐标系对象
-    src_srs = osr.SpatialReference()
-    src_srs.ImportFromWkt(dataset.GetProjection())
-
-    tgt_srs = osr.SpatialReference()
-    tgt_srs.ImportFromEPSG(4326)  # WGS84
-
-    # 坐标转换器
-    transform = osr.CoordinateTransformation(src_srs, tgt_srs)
-
-    # 坐标转换
-    ul_lat, ul_lon, _ = transform.TransformPoint(ul_x, ul_y)
-    lr_lat, lr_lon, _ = transform.TransformPoint(lr_x, lr_y)
+    # 四个角点的原始坐标
+    ul_x, ul_y = gt[0], gt[3]  # 左上角
+    lr_x, lr_y = gt[0] + width * gt[1] + height * gt[2], gt[3] + width * gt[4] + height * gt[5]  # 右下角
+    ll_x, ll_y = ul_x, lr_y  # 左下角
+    ur_x, ur_y = lr_x, ul_y  # 右上角
 
     # 返回结果
     return {
-        "upper_left": {"lon": ul_lon, "lat": ul_lat},
-        "lower_right": {"lon": lr_lon, "lat": lr_lat}
+        "lower_left": {"lon": ll_x, "lat": ll_y},
+        "lower_right": {"lon": lr_x, "lat": lr_y},
+        "upper_right": {"lon": ur_x, "lat": ur_y},
+        "upper_left": {"lon": ul_x, "lat": ul_y},
     }
 
 def reproject_dataset(src_dataset, target_epsg=3857, resampling=gdal.GRA_Bilinear):
@@ -281,30 +271,20 @@ def process_dem_to_image_from_datasets(input_dem_path: str, output_path: str, fi
         dataset = gdal.Open(input_dem_path, gdal.GA_ReadOnly)
         if dataset is None:
             raise RuntimeError(f"无法打开DEM文件: {input_dem_path}")
-        dst_dataset,info = reproject_dataset(dataset)
+        geo_transform = dataset.GetGeoTransform()
+        pixel_size = int(float(geo_transform[1])+0.5)
+        downsampled_dataset = downsample_dataset(dataset, pixel_size, target_resolution=20, no_data_value=-9999)
+        dst_dataset,info = reproject_dataset(downsampled_dataset)
 
-        # 获取仿射变换参数
-        geo_transform = dst_dataset.GetGeoTransform()
-        pixel_width = int(float(geo_transform[1])+0.5)
-        print(pixel_width)
-        if dataset is not None:
-            dataset.FlushCache()
-            dataset = None
-
-        bound = get_dataset_bounds_in_4326_dict(dst_dataset)
+        bound = get_dataset_bounds(dst_dataset)
 
         save_info_to_json(info, bound, output_path)
        
-
-
         # 从数据集读取DEM数据
         dem_data = dst_dataset.GetRasterBand(1).ReadAsArray().astype(np.float32)
         # 将-9999无数据值替换为0，避免处理错误
         dem_data[dem_data == -9999] = 0.0
 
-        if dst_dataset is not None:
-            dst_dataset.FlushCache()
-            dst_dataset = None
         if dem_data is None:
             raise RuntimeError("无法从数据集读取DEM数据")
     
@@ -325,14 +305,20 @@ def process_dem_to_image_from_datasets(input_dem_path: str, output_path: str, fi
         
         save_image(image, output_dem_path)
         
+        if dataset is not None:
+            dataset.FlushCache()
+            dataset = None
+        if downsampled_dataset is not None:
+            downsampled_dataset.FlushCache()
+            downsampled_dataset = None
+        if dst_dataset is not None:
+            dst_dataset.FlushCache()
+            dst_dataset = None
         
         # 输出统计信息到日志
         
         processing_time = time.time() - start_time
         print(f"DEM文件处理完成，耗时: {processing_time:.2f} 秒")
-        
-        # 清理资源
-        dataset = None
         
         return bound, info
         

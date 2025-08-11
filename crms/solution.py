@@ -12,7 +12,7 @@ from crms.raster import Raster
 from crms.common import Common
 from crms.treeger import Treeger
 from persistence.helpers.DemGeneration import process_dem_to_image_from_datasets
-from fastapi import Request  # 添加这一行
+
 
 from icrms.isolution import ISolution
 from src.nh_grid_server.core.config import settings
@@ -47,9 +47,9 @@ class Solution(ISolution):
         action_id = str(int(time.time() * 1000))
         action_path = self.human_actions_path / f'{action_id}.json'
         
-        # 获取params数据并去掉action_type字段
+        # Get params data and remove action_type field
         params_data = params.model_dump()
-        params_data.pop('action_type', None)  # 安全地移除action_type字段
+        params_data.pop('action_type', None)  # Safely remove action_type field
             
         with open(action_path, 'w', encoding='utf-8') as f:
             json.dump({
@@ -63,9 +63,9 @@ class Solution(ISolution):
         if not action_path.exists():
             raise FileNotFoundError(f'Action file {action_path} does not exist.')
         
-        # 获取params数据并去掉action_type字段
+        # Get params data and remove action_type field
         params_data = params.model_dump()
-        params_data.pop('action_type', None)  # 安全地移除action_type字段
+        params_data.pop('action_type', None)  # Safely remove action_type field
         
         with open(action_path, 'w', encoding='utf-8') as f:
             json.dump({
@@ -83,25 +83,25 @@ class Solution(ISolution):
     def get_human_actions(self) -> list[dict]:
         actions = []
         try:
-            # 检查actions目录是否存在
+            # Check if actions directory exists
             if not self.human_actions_path.exists():
                 logger.warning(f'Actions path {self.human_actions_path} does not exist')
                 return actions
             
-            # 遍历actions目录下的所有JSON文件
+            # Iterate through all JSON files in actions directory
             for action_file in self.human_actions_path.glob('*.json'):
                 try:
                     with open(action_file, 'r', encoding='utf-8') as f:
                         action_data = json.load(f)
-                        # 添加action_id（从文件名提取）
-                        action_id = action_file.stem  # 去掉.json后缀
+                        # Add action_id (extracted from filename)
+                        action_id = action_file.stem  # Remove .json suffix
                         action_data['action_id'] = action_id
                         actions.append(action_data)
                 except (json.JSONDecodeError, IOError) as e:
                     logger.error(f'Failed to read action file {action_file}: {str(e)}')
                     continue
             
-            # 按action_id排序（时间戳顺序）
+            # Sort by action_id (timestamp order)
             actions.sort(key=lambda x: x.get('action_id', '0'))
             
         except Exception as e:
@@ -126,7 +126,7 @@ class Solution(ISolution):
             with open(ne_path, 'w', encoding='utf-8') as f:
                 for ne in ne_list:
                     if isinstance(ne, (list, tuple)):
-                        # 将列表元素用空格或逗号分隔
+                        # Separate list elements with spaces or commas
                         f.write(','.join(map(str, ne)) + '\n')
                     else:
                         f.write(str(ne) + '\n')
@@ -153,7 +153,7 @@ class Solution(ISolution):
             with open(ns_path, 'w', encoding='utf-8') as f:
                 for ns in ns_list:
                     if isinstance(ns, (list, tuple)):
-                        # 将列表元素用空格或逗号分隔
+                        # Separate list elements with spaces or commas
                         f.write(','.join(map(str, ns)) + '\n')
                     else:
                         f.write(str(ns) + '\n')
@@ -216,15 +216,15 @@ class Solution(ISolution):
             # 5. create package
             package_path = self.path / f'{self.name}_package.zip'
             with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as package_zip:
-                # 添加solution目录中的所有文件和文件夹
+                # Add all files and folders in solution directory
                 for root, dirs, files in os.walk(self.path):
                     root_path = Path(root)
                     
-                    # 跳过生成的压缩包文件本身
+                    # Skip the generated package file itself
                     if root_path == self.path and f'{self.name}_package.zip' in files:
                         files.remove(f'{self.name}_package.zip')
                     
-                    # 添加所有文件
+                    # Add all files
                     for file in files:
                         file_path = root_path / file
                         arcname = file_path.relative_to(self.path)
@@ -252,11 +252,11 @@ class Solution(ISolution):
 
     def delete_solution(self) -> None:
         """
-        删除解决方案
+        Delete solution
         :return: None
         """
         ...
-        # 删除解决方案目录
+        # Delete solution directory
         if self.path.exists():
             shutil.rmtree(self.path)
             logger.info(f'Solution directory {self.path} deleted successfully')
@@ -265,8 +265,8 @@ class Solution(ISolution):
 
     def get_solution(self) -> dict:
         """
-        获取解决方案
-        :return: 解决方案字典
+        Get solution
+        :return: Solution dictionary
         """
         solution_data = {
             "name": self.name,
@@ -278,19 +278,19 @@ class Solution(ISolution):
 
     def get_terrain_data(self, base_url: str = None) -> dict:
         """
-        获取地形数据字典
-        :param base_url: 基础URL，用于构建完整的地形图URL
-        :return: 地形数据字典
+        Get terrain data dictionary
+        :param base_url: Base URL for constructing complete terrain map URL
+        :return: Terrain data dictionary
         """
         try:
             data = {}
             data_path = self.render_path / 'static' / 'dem' / 'data.json'
             
-            # 构建完整的URL
+            # Construct complete URL
             if base_url:
                 dem_url = f"{base_url}/solutions/{self.name}/render/static/dem/dem.png"
             else:
-                # 如果没有base_url，使用相对路径作为后备
+                # Use relative path as fallback if no base_url
                 dem_url = f"/solutions/{self.name}/render/static/dem/dem.png"
             
             if data_path.exists():
@@ -298,27 +298,58 @@ class Solution(ISolution):
                     data = json.load(f)
             else:
                 logger.warning(f'Terrain data file {data_path} does not exist')
-            # 安全地获取 dimensions 数据
+            # Safely get dimensions data
             dimensions = data.get('dimensions', {})
             if dimensions is None:
                 dimensions = {}
             
-            # 安全地获取 bands 数据
+            # Safely get bands data
             bands = data.get('bands', [])
             if bands is None or len(bands) == 0:
                 bands = [{'min': 0, 'max': 0}]
+            
+            # Safely get bounds_4326 data
+            bounds_4326 = data.get('bounds_4326', {})
+            if bounds_4326 is None:
+                bounds_4326 = {}
+            
+            # Extract four corner coordinates
+            upper_left = bounds_4326.get('upper_left', {})
+            upper_right = bounds_4326.get('upper_right', {})
+            lower_left = bounds_4326.get('lower_left', {})
+            lower_right = bounds_4326.get('lower_right', {})
+            
+            # Safely get longitude and latitude coordinates
+            upper_left_lon = upper_left.get('lon', 0.0)
+            upper_left_lat = upper_left.get('lat', 0.0)
+            upper_right_lon = upper_right.get('lon', 0.0)
+            upper_right_lat = upper_right.get('lat', 0.0)
+            lower_left_lon = lower_left.get('lon', 0.0)
+            lower_left_lat = lower_left.get('lat', 0.0)
+            lower_right_lon = lower_right.get('lon', 0.0)
+            lower_right_lat = lower_right.get('lat', 0.0)
+            
+            # Build corner coordinate arrays
+            upper_left = [upper_left_lon, upper_left_lat]
+            upper_right = [upper_right_lon, upper_right_lat]
+            lower_left = [lower_left_lon, lower_left_lat]
+            lower_right = [lower_right_lon, lower_right_lat]
             
             terrain_data = {
                 "terrainMap": dem_url,
                 "terrainMapSize": [dimensions.get('width', 0), dimensions.get('height', 0)],
                 "terrainHeightMin": bands[0].get('min', 0),
                 "terrainHeightMax": bands[0].get('max', 0),
+                "lower_left": lower_left,
+                "lower_right": lower_right,
+                "upper_right": upper_right,
+                "upper_left": upper_left,
             }
             return terrain_data
             
         except Exception as e:
             logger.error(f'Failed to get terrain data: {str(e)}')
-            # 返回默认的地形数据结构
+            # Return default terrain data structure
             if base_url:
                 dem_url = f"{base_url}/solutions/{self.name}/render/static/dem/dem.png"
             else:
@@ -334,8 +365,8 @@ class Solution(ISolution):
     # From Model Server
     def clone_package(self) -> dict:
         """
-        获取解决方案的压缩包供其他服务访问
-        :return: 包含压缩包信息和数据的字典
+        Get solution package for access by other services
+        :return: Dictionary containing package information and data
         """
         try:
             package_path = self.path / f'{self.name}_package.zip'
@@ -348,7 +379,7 @@ class Solution(ISolution):
                     "package_data": None
                 }
             
-            # 读取压缩包二进制数据
+            # Read package binary data
             with open(package_path, 'rb') as package_file:
                 package_data = package_file.read()
             
