@@ -535,11 +535,11 @@ class Raster(IRaster):
             
             # 将地理坐标转换为像素坐标
             row, col = rasterio.transform.rowcol(src.transform, target_x, target_y)
-            
+
             # 检查坐标是否在栅格范围内
             if 0 <= row < src.height and 0 <= col < src.width:
                 value = self.cog_tif[row, col]
-                return float(value) if value != src.nodata else None
+                return float(value) if value != src.nodata else src.nodata
             else:
                 logger.debug(f'Coordinates ({target_x}, {target_y}) are outside raster bounds')
                 return None

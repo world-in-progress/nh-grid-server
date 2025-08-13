@@ -48,11 +48,12 @@ class IRaster:
         """
         ...
 
-    def sampling(self, x: float, y: float) -> float:
+    def sampling(self, x: float, y: float, src_crs: str = "EPSG:4326") -> float:
         """
         获取指定坐标处的栅格采样值
         :param x: X坐标
         :param y: Y坐标
+        :param src_crs: 源坐标参考系
         :return: 栅格值，如果坐标处无数据则返回None
         """
         ...
