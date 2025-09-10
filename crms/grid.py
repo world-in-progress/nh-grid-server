@@ -69,7 +69,7 @@ class Overview:
 
     def set_value(self, index, value):
         if index < 0 or index >= self.size:
-            raise IndexError('Index out of bounds')
+            raise IndexError('3Index out of bounds')
         
         byte_index = index // 8
         bit_index = index % 8
@@ -80,7 +80,7 @@ class Overview:
 
     def get_value(self, index):
         if index < 0 or index >= self.size:
-            raise IndexError('Index out of bounds')
+            raise IndexError('4Index out of bounds')
 
         byte_index = index // 8
         bit_index = index % 8
@@ -100,7 +100,7 @@ class GridCache:
         
         def __getitem__(self, index: int) -> tuple[int, int]:
             if index < 0 or index >= len(self):
-                raise IndexError('Index out of bounds')
+                raise IndexError('5Index out of bounds')
             return self._parent._decode_at_index(index)
 
         def __len__(self) -> int:
@@ -140,14 +140,14 @@ class GridCache:
 
     def slice_grids(self, start_index: int, length: int) -> bytes:
         if start_index < 0 or start_index > self._len:
-            raise IndexError('Index out of bounds')
+            raise IndexError('1Index out of bounds')
         start = start_index * 9
         end = min(start + length * 9, self._len * 9)
         return self.data[start:end]
     
     def slice_edges(self, start_index: int, length: int) -> bytes:
         if start_index < 0 or start_index > self._len:
-            raise IndexError('Index out of bounds')
+            raise IndexError('2Index out of bounds')
         end_index = min(start_index + length, self._len)
         return self.edges[start_index : end_index]
 
@@ -277,8 +277,6 @@ class Grid(IGrid):
         self.meta_ov_byte_length = 0
         self.ov_info: list[tuple[list[int], int]] = []
         for i in range(len(self.grid_info)):
-            if i == 0:
-                continue
             width = int(self.grid_info[0][0] / self.grid_info[i][0])
             height = int(self.grid_info[0][1] / self.grid_info[i][1])
             self.ov_info.append((
@@ -286,7 +284,7 @@ class Grid(IGrid):
                 width * height
             ))
         
-        self.ov_bit_length = 1
+        self.ov_bit_length = 0
         for info in self.ov_info:
             _, size = info
             self.ov_bit_length += size
@@ -296,7 +294,7 @@ class Grid(IGrid):
         for info in self.ov_info:
             _, size = info
             self.ov_offset.append(self.ov_offset[-1] + size)
-        
+
         # Init bounds, subdivide_rules and meta_level_info, which will be updated later
         inf, neg_inf = float('inf'), float('-inf')
         self.bounds = [inf, inf, neg_inf, neg_inf]  # [min_x, min_y, max_x, max_y]
@@ -377,7 +375,9 @@ class Grid(IGrid):
             bounds=self.bounds,
             first_level_grid_size=self.first_level_grid_size,
             first_level_width=self.first_level_width,
-            ov_byte_length=self.ov_byte_length
+            ov_byte_length=self.ov_byte_length,
+            meta_level_info=self.meta_level_info,
+            grid_info=self.grid_info
         )
         
         num_processes = min(os.cpu_count(), len(batch_args))
@@ -975,7 +975,9 @@ def _process_chunk_overview_worker(
         bounds: list[float],
         first_level_grid_size: list[float],
         first_level_width: int,
-        ov_byte_length: int
+        ov_byte_length: int,
+        meta_level_info: list[dict[str, int]],
+        grid_info: list[list[float]]
     ) -> None:
     """
     Worker function to process a single patch overview.
@@ -1000,7 +1002,7 @@ def _process_chunk_overview_worker(
             # Handle active status
             if status == 0b10:
                 offset = ov_offset[level - 1]
-                local_id = 0 if level == 1 else patch.get_local_id(level, global_id)
+                local_id = 0 if level == 1 else _get_meta_local_id(level, global_id, first_level_global_id, meta_level_info, grid_info)
                 ov.set_value(offset + local_id, True)
 
             # Handle inactive (inactive and not deleted) status
@@ -1031,39 +1033,6 @@ def _process_chunk_overview_worker(
     del meta_ov_chunk
     del patch_ov_chunk
     return
-
-def _get_meta_local_id(level: int, global_id: int, meta_level_info: list[dict[str, int]], subdivide_rules: list[list[int]]) -> int:
-    if level == 0 or level == 1:
-        return global_id
-
-    total_width = meta_level_info[level]['width']
-    sub_width = subdivide_rules[level - 1][0]
-    sub_height = subdivide_rules[level - 1][1]
-    local_x = global_id % total_width
-    local_y = global_id // total_width
-    return (((local_y % sub_height) * sub_width) + (local_x % sub_width))
-
-def _get_meta_global_id(
-        level: int,
-        first_level_global_id: int,
-        local_id_from_first_level: int,
-        meta_level_info: list[dict[str, int]],
-        grid_info: list[list[float]]
-    ) -> int:
-    if level == 0 or level == 1:
-        return first_level_global_id
-
-    sub_width_from_first_level = int(grid_info[0][0] / grid_info[level - 1][0])
-    sub_height_from_first_level = int(grid_info[0][1] / grid_info[level - 1][1])
-
-    first_level_bl_u = first_level_global_id * sub_width_from_first_level
-    first_level_bl_v = first_level_global_id * sub_height_from_first_level
-
-    local_u = local_id_from_first_level % sub_width_from_first_level
-    local_v = local_id_from_first_level // sub_width_from_first_level
-
-    level_width = meta_level_info[level]['width']
-    return (first_level_bl_u + local_u) + (first_level_bl_v + local_v) * level_width
 
 def _get_children_global_ids(
         level: int,
@@ -1097,33 +1066,60 @@ def _encode_grid_to_bytes(level: int, global_id: int) -> bytes:
     """Encode level (uint8) and global_id (uint64) into bytes"""
     return struct.pack('!BQ', level, global_id)
 
+def _get_meta_local_id(
+        level: int, global_id: int,
+        first_level_global_id: int,
+        meta_level_info: list[dict[str, int]],  grid_info: list[list[float]]
+) -> int:
+    if level == 0 or level == 1:
+        return global_id
+
+    sub_width_from_first_level = int(grid_info[0][0] / grid_info[level - 1][0])
+    sub_height_from_first_level = int(grid_info[0][1] / grid_info[level - 1][1])
+
+    first_level_width = meta_level_info[1]['width']
+    first_level_u = first_level_global_id % first_level_width
+    first_level_v = first_level_global_id // first_level_width
+
+    first_level_bl_u = first_level_u * sub_width_from_first_level   # first level bl column num at level: {level}
+    first_level_bl_v = first_level_v * sub_height_from_first_level  # first level bl row num at level: {level}
+
+    total_width = meta_level_info[level]['width']
+    global_u = global_id % total_width
+    global_v = global_id // total_width
+
+    local_u = global_u - first_level_bl_u
+    local_v = global_v - first_level_bl_v
+    return local_v * sub_width_from_first_level + local_u
+    
 def _process_overview(
         ov: Overview,
-        global_id: int,
+        first_level_global_id: int,
         ov_offset: list[int],
         meta_level_info: list[dict[str, int]],
         subdivide_rules: list[list[int]],
         grid_info: list[list[float]]
     ) -> bytearray:
     active_grid_info: bytearray = bytearray()
-    g_stack = [(1, global_id)] # stack of (level, local_id)
+    g_stack = [(1, first_level_global_id)] # stack of (level, global_id)
     while g_stack:
-        level, local_id = g_stack.pop()
+        level, global_id = g_stack.pop()
         if level == 1:
             local_id = 0
+        else:
+            local_id = _get_meta_local_id(level, global_id, first_level_global_id, meta_level_info, grid_info)
         ov_index = ov_offset[level - 1] + local_id
-        
+
         if ov.get_value(ov_index):
-            _global_id = _get_meta_global_id(level, global_id, local_id, meta_level_info, grid_info)
-            active_grid_info += _encode_grid_to_bytes(level, _global_id)
+            active_grid_info += _encode_grid_to_bytes(level, global_id)
         else:
             if level >= len(meta_level_info) - 1: # meta_level_info[0] is the root level (not the first), valid length of meta_level_info is len(meta_level_info) - 1
                 continue
-            
+
             children_info = _get_children_global_ids(level, global_id, meta_level_info, subdivide_rules)
             if children_info:
                 for child_global_id in children_info:
-                    g_stack.append((level + 1, _get_meta_local_id(level + 1, child_global_id, meta_level_info, subdivide_rules)))
+                    g_stack.append((level + 1, child_global_id))
 
     return active_grid_info
 
@@ -1149,9 +1145,6 @@ def _batch_process_overview_worker(
     end = min(batch_byte_offset + batch_size, mm.size())
     batch = mm[batch_byte_offset:end]
     active_grid_info: bytearray = bytearray()
-    count = 0
-    for i in range(0, len(batch), ov_byte_length):
-        count += 1
     for i in range(0, len(batch), ov_byte_length):
         ov_bytes_i = batch[i:i + ov_byte_length]
         ov = Overview.create(ov_bytes_i)

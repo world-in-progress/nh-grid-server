@@ -119,7 +119,7 @@ class Solution(ISolution):
                 grid.altitude = dem_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
                 grid.type = lum_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
                 ne_list.append(grid.ne)
-                print(f"Grid {grid.index} - Altitude: {grid.altitude}, Type: {grid.type}")
+                # print(f"Grid {grid.index} - Altitude: {grid.altitude}, Type: {grid.type}")
 
             ne_path = self.env_path / 'ne.txt'
 
@@ -146,7 +146,7 @@ class Solution(ISolution):
                 edge.altitude = dem_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
                 edge.type = lum_crm.sampling(x, y, src_crs=DEFAULT_SRC_CRS)
                 ns_list.append(edge.ns)
-                print(f"Edge {edge.index} - Altitude: {edge.altitude}, Type: {edge.type}")
+                # print(f"Edge {edge.index} - Altitude: {edge.altitude}, Type: {edge.type}")
 
             ns_path = self.env_path / 'ns.txt'
 
@@ -183,14 +183,21 @@ class Solution(ISolution):
             inp_crm = treeger.trigger(inp_node_key, Common)
 
             # 1. ne and ns sampling
-            grid_list = grid_crm.parse_grid_records()
-            edge_list = grid_crm.parse_edge_records()
-            ne_sampling_result = self.ne_sampling(dem_crm, lum_crm, grid_list)
-            ns_sampling_result = self.ns_sampling(dem_crm, lum_crm, edge_list)
-            if not ne_sampling_result.get('status', True):
-                logger.error(f'NE sampling failed: {ne_sampling_result.get("message", "")}')
-            if not ns_sampling_result.get('status', True):
-                logger.error(f'NS sampling failed: {ns_sampling_result.get("message", "")}')
+            # grid_list = grid_crm.parse_grid_records()
+            # edge_list = grid_crm.parse_edge_records()
+            # ne_sampling_result = self.ne_sampling(dem_crm, lum_crm, grid_list)
+            # ns_sampling_result = self.ns_sampling(dem_crm, lum_crm, edge_list)
+            # if not ne_sampling_result.get('status', True):
+            #     logger.error(f'NE sampling failed: {ne_sampling_result.get("message", "")}')
+            # if not ns_sampling_result.get('status', True):
+            #     logger.error(f'NS sampling failed: {ns_sampling_result.get("message", "")}')
+            static_path = settings.PERSISTENCE_DIR + 'static'
+            static_ne_path = static_path + '/ne.txt'
+            static_ns_path = static_path + '/ns.txt'
+            ne_path = self.env_path / 'ne.txt'
+            ns_path = self.env_path / 'ns.txt'
+            shutil.copy(static_ne_path, ne_path)
+            shutil.copy(static_ns_path, ns_path)
 
             # 2. copy common files
             rainfall_filename = rainfall_crm.copy_to(self.env_path).get('message', 'rainfall.txt')
@@ -233,8 +240,10 @@ class Solution(ISolution):
             logger.info(f'Package created: {package_path}')
 
             self.model_env = {
-                "ne": ne_sampling_result.get('message', 'ne.txt'),
-                "ns": ns_sampling_result.get('message', 'ns.txt'),
+                # "ne": ne_sampling_result.get('message', 'ne.txt'),
+                # "ns": ns_sampling_result.get('message', 'ns.txt'),
+                "ne": "ne.txt",
+                "ns": "ns.txt",
                 "rainfall": rainfall_filename,
                 "gate": gate_filename,
                 "tide": tide_filename,

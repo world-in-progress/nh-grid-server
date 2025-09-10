@@ -4,11 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .schemas import simulation
-
 from .api import api_router
 from .core.config import settings
-from .core.mcp_client import MCPClient
 from .core.server import init_working_directory
 from .core.bootstrapping_treeger import BT
 
@@ -99,4 +96,4 @@ app = create_app()
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8001)
+    uvicorn.run(app, host='0.0.0.0', port=settings.SERVER_PORT)

@@ -105,8 +105,8 @@ def update_by_features(node_key: str, body: UpdateByFeatureBody = Body(..., desc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Failed to update raster by features: {str(e)}')
 
-@router.get('/sampling/{node_key}/{x}/{y}', response_model=SamplingResponse)
-def get_raster_sampling(node_key: str, x: float, y: float):
+@router.get('/sampling/{node_key}/{x}/{y}/{epsg}', response_model=SamplingResponse)
+def get_raster_sampling(node_key: str, x: float, y: float, epsg: int = 4326):
     """
     Description
     --
@@ -121,7 +121,7 @@ def get_raster_sampling(node_key: str, x: float, y: float):
     """
     try:
         with BT.instance.connect(node_key, IRaster, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as raster:
-            value = raster.sampling(x, y)
+            value = raster.sampling(x, y, f'EPSG:{epsg}')
             return SamplingResponse(
                 success=True,
                 message="Raster sampling retrieved successfully.",
