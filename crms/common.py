@@ -67,3 +67,21 @@ class Common(ICommon):
             "type": self.type,
             "data": data
         }
+    
+    def delete(self) -> dict:
+        """Method to delete the Common resource file
+
+        Returns:
+            dict: result of the delete operation
+        """
+        try:
+            if os.path.exists(self.src_path):
+                os.remove(self.src_path)
+                logger.info(f"Successfully deleted file: {self.src_path}")
+                return {"status": True, "message": f"File {self.name} deleted successfully"}
+            else:
+                logger.warning(f"File {self.src_path} does not exist")
+                return {"status": False, "message": f"File {self.name} does not exist"}
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            return {"status": False, "message": str(e)}

@@ -13,3 +13,6 @@ class ICommon:
 
     def get_data(self) -> dict:
         ...
+
+    def delete(self) -> dict:
+        ...

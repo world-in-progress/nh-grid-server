@@ -73,3 +73,23 @@ def get_data(node_key: str):
             message=f'Failed to get data: {str(e)}',
             data={}
         )
+
+@router.delete('/delete/{node_key}', response_model=BaseResponse)
+def delete_common(node_key: str):
+    """
+    Description
+    --
+    Delete a common resource by node key.
+    """
+    try:
+        with BT.instance.connect(node_key, ICommon, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as common:
+            result = common.delete()
+        return BaseResponse(
+            success=result.get("status", False),
+            message=result.get("message", "")
+        )
+    except Exception as e:
+        return BaseResponse(
+            success=False,
+            message=f'Failed to delete common: {str(e)}'
+        )
