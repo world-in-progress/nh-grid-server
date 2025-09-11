@@ -68,31 +68,3 @@ class Common(ICommon):
             "data": data
         }
     
-    def delete(self) -> dict[str, bool | str]:
-        """
-        Delete common
-        """
-        if os.path.exists(self.src_path):
-            try:
-                shutil.rmtree(self.src_path)
-                return {
-                    'success': True,
-                    'message': 'Common deleted successfully',
-                }
-            except PermissionError as e:
-                logger.error(f'Permission denied when deleting common: {str(e)}')
-                return {
-                    'success': False,
-                    'message': f'Permission denied: {str(e)}',
-                }
-            except Exception as e:
-                logger.error(f'Failed to delete common: {str(e)}')
-                return {
-                    'success': False,
-                    'message': f'Failed to delete common: {str(e)}',
-                }
-        else:
-            return {
-                'success': False,   
-                'message': 'Common not found',
-            }

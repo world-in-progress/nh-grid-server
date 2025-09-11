@@ -82,11 +82,10 @@ def delete_common(node_key: str):
     Delete a common resource by node key.
     """
     try:
-        with BT.instance.connect(node_key, ICommon, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as common:
-            result = common.delete()
+        BT.instance.unmount_node(node_key)
         return BaseResponse(
-            success=result.get("success", False),
-            message=result.get("message", "")
+            success=True,
+            message="Common resource deleted successfully"
         )
     except Exception as e:
         return BaseResponse(
