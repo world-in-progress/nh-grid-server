@@ -85,7 +85,7 @@ def delete_common(node_key: str):
         with BT.instance.connect(node_key, ICommon, duration=CRMDuration.Forever, reuse=ReuseAction.REPLACE) as common:
             result = common.delete()
         return BaseResponse(
-            success=result.get("status", False),
+            success=result.get("success", False),
             message=result.get("message", "")
         )
     except Exception as e:
