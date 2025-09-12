@@ -492,6 +492,9 @@ class Raster(IRaster):
                         
             # 在所有操作完成后，重新生成云优化的 GeoTIFF（替换策略）
             new_cog_path = self._create_cloud_optimized_tif()
+            with rasterio.open(new_cog_path) as src:
+                self.cog_src = src
+                self.cog_tif = src.read(1)
             logger.info(f'Regenerated Cloud Optimized GeoTIFF at {new_cog_path} after optimized batch update')
 
             # 清理全局范围缓存，因为数据已经更新
