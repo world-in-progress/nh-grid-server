@@ -368,10 +368,7 @@ class Treeger(ITreeger):
                     for key, value in params.items():
                         if isinstance(value, dict) or isinstance(value, list):
                             json_str = json.dumps(value, ensure_ascii=False)
-                            if sys.platform == 'win32':
-                                cmd.extend([f'--{key}', json_str])
-                            else:
-                                cmd.extend([f'--{key}', f"'{json_str}'"])
+                            cmd.extend([f'--{key}', json_str])
                         else:
                             cmd.extend([f'--{key}', str(value)])
                 

@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.50.0",
-    "c-two>=0.1.20",
+    "c-two>=0.2.5",
     "fastapi>=0.115.13",
     "gdal>=3.10.2",
     "geopandas>=1.1.1",
@@ -25,7 +25,6 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-c-two = { git = "https://github.com/world-in-progress/c-two.git", branch = "main" }
 gdal = [
   { index = "gdal-wheels", marker = "sys_platform == 'linux'" },
   { index = "geospatial_wheels", marker = "sys_platform == 'win32'" },

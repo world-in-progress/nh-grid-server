@@ -1,3 +1,4 @@
+import sys
 import socket
 import logging
 import c_two as cc
@@ -46,8 +47,7 @@ def discover(body: DiscoverBody=Body(..., description='discover')):
     try:
         BT.instance.activate_node(node_key, ReuseAction.REPLACE, CRMDuration.Forever)
         # 获取本机IP
-        hostname = socket.gethostname()
-        ip = socket.gethostbyname(hostname)
+        ip = get_local_ip()
         port = settings.SERVER_PORT
         address = f'http://{ip}:{port}/api/proxy/relay?node_key={node_key}'
     except Exception as e:
@@ -75,3 +75,14 @@ async def relay(node_key: str=Query(..., description='node_key!'), body: bytes=B
     except Exception as e:
         logger.error(f'Failed to relay message: {str(e)}')
         raise HTTPException(status_code=500, detail=f'Failed to relay message: {str(e)}')
+    
+# Helpers ##################################################
+def get_local_ip():
+    """Get the local IP address by connecting to an external address"""
+    if sys.platform == 'win32':
+        hostname = socket.gethostname()
+        return socket.gethostbyname(hostname)
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(('8.8.8.8', 80))  # google DNS, doesn't actually send data
+        return s.getsockname()[0]

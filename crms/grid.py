@@ -473,7 +473,7 @@ class Grid(IGrid):
                         grid_stack.append((child_level, child_global_id))
             
             for child_level, child_global_id in adj_children:
-                self._update_grid_neighbour(grid_level, grid_global_id, child_level, child_global_id, edge_code)
+                self._update_grid_neighbour(grid_cache, grid_level, grid_global_id, child_level, child_global_id, edge_code)
                 
     def _find_grid_neighbours(self, grid_cache: GridCache):
         for level, global_id in grid_cache.array:
