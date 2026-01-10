@@ -781,6 +781,7 @@ def assembly(schema_file_path: str, patch_paths: list[str], workspace: str):
     epsg: int = schema['epsg']
     grid_info: list[list[float]] = schema['grid_info']
     first_level_resolution: list[float] = grid_info[0]
+    alignment_origin: list[float] = schema['base_point']
     
     # Init bounds from all patches
     meta_bounds = _get_bounds(patch_paths)
@@ -888,4 +889,17 @@ def assembly(schema_file_path: str, patch_paths: list[str], workspace: str):
         meta_bounds,
         str(edge_record_path)
     )
+    
+    # Create meta json
+    meta_info = {
+        'epsg': epsg,
+        'bounds': meta_bounds,
+        'grid_info': grid_info,
+        'level_info': meta_level_info,
+        'subdivide_rules': subdivide_rules,
+        'alignment_origin': alignment_origin,
+    }
+    meta_path = workspace / 'meta.json'
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta_info, f, indent=4)
     
