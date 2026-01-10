@@ -9,7 +9,7 @@ import pyarrow as pa
 from pathlib import Path
 import pyarrow.parquet as pq
 from collections import Counter
-from icrms.ipatch import IPatch, GridSchema, GridAttribute, TopoSaveInfo
+from icrms.ipatch import GridSchema, TopoSaveInfo
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,7 @@ GRID_SCHEMA: pa.Schema = pa.schema([
     (ATTR_INDEX_KEY, pa.uint64())
 ])
 
-@cc.iicrm
-class Patch(IPatch):
+class Patch:
     """
     CRM
     =

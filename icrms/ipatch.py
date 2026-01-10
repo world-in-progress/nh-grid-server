@@ -293,7 +293,7 @@ class TopoSaveInfo:
 
 # Define ICRM ###########################################################
 
-@cc.icrm
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class IPatch:
     """
     ICRM

@@ -13,10 +13,10 @@ if __name__ == '__main__':
     assembly(
         schema_file_path='./resource/topo/schemas/hk/schema.json',
         patch_paths=[
-            './resource/topo/schemas/hk/patches/1'
+            './resource/topo/schemas/hk/patches/1/'
         ],
         workspace=str(workspace)
     )
     
-    es = HydroElements(str(workspace / 'grid_records.bin'))
+    es = HydroElements(str(workspace / 'cell_topo.bin'))
     es.export_ne(str(workspace / 'ne.txt'))
