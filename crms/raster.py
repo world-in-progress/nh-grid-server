@@ -26,8 +26,7 @@ from src.nh_grid_server.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-@cc.iicrm
-class Raster(IRaster):
+class Raster:
     def __init__(self, name: str, type: str, original_tif_path: str):
         """
         初始化栅格对象

@@ -9,7 +9,7 @@ class RasterOperation(Enum):
     SUBTRACT = "subtract" # 减值操作
     MAX_FILL = "max_fill" # 将范围内所有像素设置为该范围内的最高值
 
-@cc.icrm
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class IRaster:
 
     def get_cog_tif(self) -> str:

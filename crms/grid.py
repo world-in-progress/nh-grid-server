@@ -253,8 +253,7 @@ class HydroSide:
             self.type,              # side type
         ]
 
-@cc.iicrm
-class Grid(IGrid):
+class Grid:
     def __init__(self, schema_path: str, workspace: str):
         self.workspace = Path(workspace)
         self.schema_path = Path(schema_path)

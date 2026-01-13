@@ -38,7 +38,7 @@ class GridResult(BaseModel):
     v: float
     depth: float
 
-@cc.icrm
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class ISimulation:
 
     def run(self) -> bool:

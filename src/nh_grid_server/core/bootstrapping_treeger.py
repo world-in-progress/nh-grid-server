@@ -47,7 +47,15 @@ class BootStrappingTreeger:
         self._meta_path = settings.SCENARIO_META_PATH
         self._server_address = settings.TREEGER_SERVER_ADDRESS
         
-        self._crm_server = cc.rpc.Server(self._server_address, Treeger())
+        treeger = Treeger()
+        server_config = cc.rpc.ServerConfig(
+            crm=treeger,
+            icrm=ITreeger,
+            bind_address=self._server_address,
+            name='TreegerCRM',
+            on_shutdown=treeger.terminate
+        )
+        self._crm_server = cc.rpc.Server(server_config)
 
         if not self._meta_path or not self._server_address:
             raise ValueError('Treeger meta path and server address must be set in settings')

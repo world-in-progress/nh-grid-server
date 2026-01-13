@@ -1,7 +1,7 @@
 import c_two as cc
 from fastapi import Request
 
-@cc.icrm
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class ISolution:
 
     def get_action_types(self) -> list[str]:

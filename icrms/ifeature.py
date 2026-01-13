@@ -3,7 +3,8 @@ from typing import Any
 from src.nh_grid_server.schemas.feature import UpdateFeatureBody
 
 # Define ICRM ###########################################################
-@cc.icrm
+
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class IFeature:
     """
     ICRM

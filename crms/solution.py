@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SRC_CRS = "EPSG:2326"
 
-@cc.iicrm
-class Solution(ISolution):
+class Solution:
     def __init__(self, name: str, model_type: str, env: dict, action_types: list[str]):
         self.name = name
         self.model_type = model_type

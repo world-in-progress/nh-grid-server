@@ -221,6 +221,105 @@ def _get_children_global_ids(
     
     return child_global_ids
 
+def _check_risk_along_edge(
+    risk_threshold: int,
+    cell_keys: set[bytes],
+    subdivide_rules: list[list[int]],
+    meta_level_info: list[dict[str, int]],
+    cell_level: int,
+    neighbour_level: int, neighbour_global_id: int,
+    adjacent_check_func: Callable
+) -> bool:
+    """
+    Check if the cell is risk along the edge with neighbour cells
+    Risk cells are those cells that has lower level than a specific neighbour cell, while the level difference is greater than risk_threshold
+    """
+    # Check if neighbour cell is activated (whether if this cell is a leaf node)
+    neighbour_key = _encode_cell_key(neighbour_level, neighbour_global_id)
+    if neighbour_key in cell_keys:
+        return False    # not risk because neighbour cell share a same level
+    else:
+        cell_stack: list[tuple[int, int]] = [(neighbour_level, neighbour_global_id)]
+        
+        while cell_stack:
+            _level, _global_id = cell_stack.pop()
+            if _level >= len(subdivide_rules):
+                continue
+            
+            sub_width, sub_height = subdivide_rules[_level]
+            children_global_ids = _get_children_global_ids(_level, _global_id, meta_level_info, subdivide_rules)
+            if children_global_ids is None:
+                continue
+            
+            for child_local_id, child_global_id in enumerate(children_global_ids):
+                is_adjacent = adjacent_check_func(child_local_id, sub_width, sub_height)
+                if not is_adjacent:
+                    continue
+                
+                child_level = _level + 1
+                child_key = _encode_cell_key(child_level, child_global_id)
+                if child_key in cell_keys:
+                    if child_level - cell_level > risk_threshold:
+                        return True # risk found
+                else:
+                    cell_stack.append((child_level, child_global_id))
+    return False
+        
+def _find_risk_cells(
+    risk_threshold: int, cell_keys: set[bytes],
+    subdivide_rules: list[list[int]], meta_level_info: list[dict[str, int]]
+) -> set[bytes]:
+    risk_cells: set[bytes] = set()
+    
+    for cell_key in cell_keys:
+        level, global_id = _decode_cell_key(cell_key)
+        cols = meta_level_info[level]['width']
+        rows = meta_level_info[level]['height']
+        
+        global_u = global_id % cols
+        global_v = global_id // cols
+        
+        # Check top edge with tCell
+        t_cell = _get_cell_from_uv(level, cols, rows, global_u, global_v + 1, meta_level_info)
+        if t_cell:
+            if _check_risk_along_edge(risk_threshold, cell_keys, subdivide_rules, meta_level_info, level, t_cell[0], t_cell[1], ADJACENT_CHECK_NORTH):
+                risk_cells.add(cell_key)
+                continue
+        # Check left edge with lCell
+        l_cell = _get_cell_from_uv(level, cols, rows, global_u - 1, global_v, meta_level_info)
+        if l_cell:
+            if _check_risk_along_edge(risk_threshold, cell_keys, subdivide_rules, meta_level_info, level, l_cell[0], l_cell[1], ADJACENT_CHECK_WEST):
+                risk_cells.add(cell_key)
+                continue
+        # Check bottom edge with bCell
+        b_cell = _get_cell_from_uv(level, cols, rows, global_u, global_v - 1, meta_level_info)
+        if b_cell:
+            if _check_risk_along_edge(risk_threshold, cell_keys, subdivide_rules, meta_level_info, level, b_cell[0], b_cell[1], ADJACENT_CHECK_SOUTH):
+                risk_cells.add(cell_key)
+                continue
+        # Check right edge with rCell
+        r_cell = _get_cell_from_uv(level, cols, rows, global_u + 1, global_v, meta_level_info)
+        if r_cell:
+            if _check_risk_along_edge(risk_threshold, cell_keys, subdivide_rules, meta_level_info, level, r_cell[0], r_cell[1], ADJACENT_CHECK_EAST):
+                risk_cells.add(cell_key)
+                continue
+    return risk_cells
+
+def _refine_risk_cells(risk_cells: set[bytes], subdivide_rules: list[list[int]], meta_level_info: list[dict[str, int]]) -> set[bytes]:
+    """
+    Refine risk cells to their children cells by one level deeper
+    """
+    refined_cells: set[bytes] = set()
+    for cell_key in risk_cells:
+        level, global_id = _decode_cell_key(cell_key)
+        children_global_ids = _get_children_global_ids(level, global_id, meta_level_info, subdivide_rules)
+        child_level = level + 1
+        for child_global_id in children_global_ids:
+            child_key = _encode_cell_key(child_level, child_global_id)
+            refined_cells.add(child_key)
+    return refined_cells
+
+
 def _find_neighbours_along_edge(
     grid_cache: GridCache,
     subdivide_rules: list[list[int]],
@@ -230,7 +329,7 @@ def _find_neighbours_along_edge(
     edge_code: EdgeCode, adjacent_check_func: Callable
 ):
     # Check if neighbour cell is activated (whether if this cell is a leaf node)
-    if grid_cache.map.get((neighbour_level, neighbour_global_id)) is not None:
+    if grid_cache.has_cell(neighbour_level, neighbour_global_id):
         _update_cell_neighbour(grid_cache, cell_level, cell_global_id, neighbour_level, neighbour_global_id, edge_code)
     else:
         adj_children: list[tuple[int, int]] = []
@@ -260,7 +359,7 @@ def _find_neighbours_along_edge(
         for child_level, child_global_id in adj_children:
             _update_cell_neighbour(grid_cache, cell_level, cell_global_id, child_level, child_global_id, edge_code)
         
-def _find_cell_neighbours(grid_cache: GridCache, subdivide_rules: list[list[int]], meta_level_info: list[dict[str, int]]):
+def _find_cell_neighbours(grid_cache: GridCache, subdivide_rules: list[list[int]], meta_level_info: list[dict[str, int]]) -> set[bytes]:
     for level, global_id in grid_cache.array:
         cols = meta_level_info[level]['width']
         rows = meta_level_info[level]['height']
@@ -768,7 +867,7 @@ def _record_edge_topology(
     with open(edge_record_path, 'wb') as f:
         f.write(edge_records)
 
-def assembly(schema_file_path: str, patch_paths: list[str], workspace: str):
+def assembly(schema_file_path: str, patch_paths: list[str], workspace: str, risk_level_threshold: int = -1):
     # Initialization ######################################################################
     
     # Create workspace directory
@@ -838,6 +937,18 @@ def assembly(schema_file_path: str, patch_paths: list[str], workspace: str):
         # Batch remove ancestor keys from activated cells in the level
         activated_cell_keys.difference_update(ancestor_keys_to_remove)
     print(f'Activated cell calculation took {time.time() - current_time:.2f} seconds')
+    
+    # Grading cells by risk level #########################################################
+    
+    # Remove low-risk cells if risk_level_threshold >= 0
+    if risk_level_threshold >= 0:
+        current_time = time.time()
+        while True:
+            risk_cells = _find_risk_cells(risk_level_threshold, activated_cell_keys, subdivide_rules, meta_level_info)
+            if not risk_cells:
+                break
+            activated_cell_keys = _refine_risk_cells(risk_cells, meta_level_info, subdivide_rules).union(activated_cell_keys.difference(risk_cells))
+        print(f'Risk cell refinement took {time.time() - current_time:.2f} seconds')
     
     # Topology construction for the grid ##################################################
     

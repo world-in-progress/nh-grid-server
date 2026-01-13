@@ -6,8 +6,7 @@ from icrms.icommon import ICommon
 import logging
 logger = logging.getLogger(__name__)
 
-@cc.iicrm
-class Common(ICommon):
+class Common:
     """
     CRM
     =

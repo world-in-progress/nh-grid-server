@@ -64,7 +64,7 @@ class CRMDuration(Enum):
     Much_Long = '600'
     Forever = '-1'
     
-@cc.icrm
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class ITreeger:
     def mount_node(self, scenario_node_name: str, node_key: str, launch_params: dict | None = None) -> None:
         ...

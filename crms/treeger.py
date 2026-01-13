@@ -50,8 +50,7 @@ class SceneNode():
         for child in children:
             self.add_child(child)
 
-@cc.iicrm
-class Treeger(ITreeger):
+class Treeger:
     def __init__(self):
         meta_path = os.getenv('SCENARIO_META_PATH', None)
         if not meta_path:

@@ -1,7 +1,8 @@
 import c_two as cc
 
 # Define ICRM ###########################################################
-@cc.icrm
+
+@cc.icrm(namespace='Gridman', version='1.0.0')
 class ICommon:
     """
     ICRM

@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EPSG = "4326"  # Default EPSG code for GeoJSON storage
 
-@cc.iicrm
-class Feature(IFeature):
+class Feature:
     """
     CRM
     =
